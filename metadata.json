@@ -1,0 +1,5 @@
+{
+  "name": "Kake-AI-bo",
+  "description": "A smart household account book that distinguishes between income, expenses, and internal money transfers across various wallets and credit cards.",
+  "requestFramePermissions": []
+}
