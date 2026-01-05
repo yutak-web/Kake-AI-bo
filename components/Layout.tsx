@@ -9,8 +9,11 @@ const Layout: React.FC = () => {
   const inactiveStyle = "bg-white sketch-border text-gray-600 px-4 py-1 hover:bg-gray-100 transition";
 
   const handleLogout = async () => {
-    if (window.confirm('ログアウトしますか？')) {
+    // 確認ダイアログを削除し、直接ログアウトを実行
+    try {
       await signOut(auth);
+    } catch (error) {
+      console.error("Logout failed:", error);
     }
   };
 

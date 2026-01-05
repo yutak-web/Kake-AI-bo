@@ -30,22 +30,24 @@ const App: React.FC = () => {
     );
   }
 
-  if (!user) {
-    return <LoginPage />;
-  }
-
   return (
     <HashRouter>
-      <Routes>
-        <Route element={<Layout />}>
-          <Route path="/registration" element={<RegistrationPage />} />
-          <Route path="/aggregation" element={<AggregationPage />} />
-          <Route path="/wallet/:walletId" element={<WalletDetailsPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/" element={<Navigate to="/registration" replace />} />
-        </Route>
-        <Route path="*" element={<Navigate to="/registration" replace />} />
-      </Routes>
+      {!user ? (
+        <Routes>
+          <Route path="*" element={<LoginPage />} />
+        </Routes>
+      ) : (
+        <Routes>
+          <Route element={<Layout />}>
+            <Route path="/registration" element={<RegistrationPage />} />
+            <Route path="/aggregation" element={<AggregationPage />} />
+            <Route path="/wallet/:walletId" element={<WalletDetailsPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/" element={<Navigate to="/registration" replace />} />
+          </Route>
+          <Route path="*" element={<Navigate to="/registration" replace />} />
+        </Routes>
+      )}
     </HashRouter>
   );
 };
