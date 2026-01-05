@@ -7,14 +7,17 @@ import {
   getDocs, 
   deleteDoc, 
   doc, 
-  updateDoc,
-  Timestamp 
+  updateDoc
 } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db, auth } from '../firebase';
 import { Wallet, Category, Transaction } from '../types';
 
-// In this environment, we use a fixed user ID since Google Login is bypassed.
-const getUserId = () => 'default-user';
+// 実際のログインユーザーIDを取得
+const getUserId = () => {
+  const user = auth.currentUser;
+  if (!user) throw new Error("User not authenticated");
+  return user.uid;
+};
 
 // Wallet Operations
 export const getWallets = async (): Promise<Wallet[]> => {
