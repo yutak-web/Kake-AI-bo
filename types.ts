@@ -6,12 +6,12 @@ export interface Wallet {
   name: string;
   type: WalletType;
   initialBalance: number;
-  currentBalance: number; // データベースに保存される現在の実残高
   color?: string;
   // For credit cards
   closingDay?: number;
   paymentDay?: number;
   initialPaymentAmount?: number;
+  withdrawalWalletId?: string; // 引き落とし口座のID
 }
 
 export interface Category {
@@ -34,13 +34,4 @@ export interface Transaction {
   categoryId?: string;
   description: string; // "内容"
   note: string;        // "備考"
-}
-
-export interface UserConfig {
-  uid: string;
-  email: string | null;
-  displayName: string | null;
-  photoURL: string | null;
-  createdAt: string;
-  lastLoginAt: string;
 }

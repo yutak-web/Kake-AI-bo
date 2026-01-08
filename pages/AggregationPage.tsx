@@ -41,7 +41,7 @@ const AggregationPage: React.FC = () => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
 
-  const { firstDay, lastDay } = useMemo(() => {
+  const getInitialDates = () => {
     const today = new Date();
     const first = new Date(today.getFullYear(), today.getMonth(), 1);
     const last = new Date(today.getFullYear(), today.getMonth() + 1, 0);
@@ -49,7 +49,9 @@ const AggregationPage: React.FC = () => {
       firstDay: formatDateLocal(first),
       lastDay: formatDateLocal(last)
     };
-  }, []);
+  };
+
+  const { firstDay, lastDay } = getInitialDates();
   
   const [startDate, setStartDate] = useState(firstDay);
   const [endDate, setEndDate] = useState(lastDay);
@@ -66,12 +68,23 @@ const AggregationPage: React.FC = () => {
     fetchData();
   }, []);
 
+  useEffect(() => {
+    if (view === 'expense') {
+      const cat = categories.find(c => c.id === selectedCategoryId);
+      if (cat && cat.type !== 'expense') setSelectedCategoryId('');
+    } else if (view === 'income') {
+      const cat = categories.find(c => c.id === selectedCategoryId);
+      if (cat && cat.type !== 'income') setSelectedCategoryId('');
+    }
+  }, [view, categories, selectedCategoryId]);
+
   const handleUpdateTx = async (payload: any) => {
     if (!editingTx) return;
     try {
       await updateTransaction(editingTx.id, payload);
       setEditingTx(null);
       fetchData();
+      alert('更新しました');
     } catch (e) {
       console.error(e);
       alert('更新に失敗しました');
@@ -94,6 +107,7 @@ const AggregationPage: React.FC = () => {
     return transactions.filter(tx => {
       const dateInRange = (!startDate || tx.date >= startDate) && (!endDate || tx.date <= endDate);
       const categoryMatches = !selectedCategoryId || tx.categoryId === selectedCategoryId;
+      
       if (view === 'expense' || view === 'income') {
         return tx.type === view && dateInRange && categoryMatches;
       }
@@ -101,19 +115,27 @@ const AggregationPage: React.FC = () => {
     });
   }, [transactions, view, startDate, endDate, selectedCategoryId]);
 
-  // Use stored currentBalance
-  const assetWallets = wallets
+  const walletBalances = wallets.map(w => {
+    let balance = Number(w.initialBalance);
+    transactions.forEach(tx => {
+      if (tx.fromWalletId === w.id) balance -= tx.amount;
+      if (tx.toWalletId === w.id) balance += tx.amount;
+    });
+    return { ...w, currentBalance: balance };
+  });
+
+  const assetWallets = walletBalances
     .filter(w => w.type !== 'card')
     .sort((a, b) => {
       if (a.type !== b.type) return a.type === 'bank' ? -1 : 1;
       return a.name.localeCompare(b.name, 'ja');
     });
 
-  const cardWallets = wallets
+  const cardWallets = walletBalances
     .filter(w => w.type === 'card')
     .sort((a, b) => a.name.localeCompare(b.name, 'ja'));
 
-  const totalAssetBalance = assetWallets.reduce((acc, curr) => acc + (curr.currentBalance || 0), 0);
+  const totalAssetBalance = assetWallets.reduce((acc, curr) => acc + curr.currentBalance, 0);
 
   const getCardPayments = () => {
     const today = new Date();
@@ -153,11 +175,15 @@ const AggregationPage: React.FC = () => {
 
       const formatLabel = (d: Date) => `${d.getMonth() + 1}/${d.getDate()} 支払い`;
 
+      // 引き落とし口座名を取得
+      const withdrawalAccount = wallets.find(w => w.id === card.withdrawalWalletId);
+
       return {
         id: card.id,
         name: card.name,
         color: card.color,
         paymentDay,
+        withdrawalAccountName: withdrawalAccount?.name || '未設定',
         payments: [
           { date: p1, amount: p1Amount, label: formatLabel(p1) },
           { date: p2, amount: p2Amount, label: formatLabel(p2) }
@@ -198,10 +224,16 @@ const AggregationPage: React.FC = () => {
 
     const sortedTxs = [...txList].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
+    const getTitle = () => {
+      if (type === 'expense') return '支出履歴';
+      if (type === 'income') return '収入履歴';
+      return '全取引履歴';
+    };
+
     return (
       <div className="mt-12 space-y-4">
         <h4 className="font-bold border-b border-gray-200 pb-2 flex justify-between items-center">
-          <span>取引履歴</span>
+          <span>{getTitle()}</span>
           <span className="text-xs font-normal text-gray-400">{sortedTxs.length} 件</span>
         </h4>
         <div className="overflow-x-auto">
@@ -209,7 +241,7 @@ const AggregationPage: React.FC = () => {
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 <th className="px-2 py-2 text-left text-gray-500 font-medium">日付</th>
-                <th className="px-2 py-2 text-left text-gray-500 font-medium">内容</th>
+                <th className="px-2 py-2 text-left text-gray-500 font-medium">内容・詳細</th>
                 <th className="px-2 py-2 text-right text-gray-500 font-medium">金額</th>
                 <th className="px-2 py-2 text-center text-gray-500 font-medium w-16">操作</th>
               </tr>
@@ -247,9 +279,9 @@ const AggregationPage: React.FC = () => {
                             {fromW?.name || '?'} <span className="mx-1">→</span> {toW?.name || '?'}
                           </span>
                         ) : tx.type === 'expense' ? (
-                          <span>支払: {fromW?.name || '?'}</span>
+                          <span>支払財布: {fromW?.name || '?'}</span>
                         ) : (
-                          <span>入金: {toW?.name || '?'}</span>
+                          <span>入金財布: {toW?.name || '?'}</span>
                         )}
                       </div>
                     </td>
@@ -262,13 +294,18 @@ const AggregationPage: React.FC = () => {
                     </td>
                     <td className="px-2 py-4 text-center">
                       <div className="flex justify-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button onClick={() => setEditingTx(tx)} className="p-1 hover:bg-blue-100 rounded text-blue-600"><EditIcon /></button>
-                        <button onClick={() => handleDeleteTx(tx.id)} className="p-1 hover:bg-red-100 rounded text-red-600"><TrashIcon /></button>
+                        <button onClick={() => setEditingTx(tx)} className="p-1 hover:bg-blue-100 rounded text-blue-600" title="編集"><EditIcon /></button>
+                        <button onClick={() => handleDeleteTx(tx.id)} className="p-1 hover:bg-red-100 rounded text-red-600" title="削除"><TrashIcon /></button>
                       </div>
                     </td>
                   </tr>
                 );
               })}
+              {sortedTxs.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="px-2 py-8 text-center text-gray-400 italic">該当する取引履歴はありません</td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -276,19 +313,91 @@ const AggregationPage: React.FC = () => {
     );
   };
 
+  const setThisMonth = () => {
+    const { firstDay, lastDay } = getInitialDates();
+    setStartDate(firstDay);
+    setEndDate(lastDay);
+  };
+
+  const setAllTime = () => {
+    setStartDate('');
+    setEndDate('');
+  };
+
+  const renderFilter = () => {
+    const filterCategories = view === 'expense' 
+      ? categories.filter(c => c.type === 'expense')
+      : view === 'income'
+        ? categories.filter(c => c.type === 'income')
+        : categories;
+
+    return (
+      <div className="sketch-border p-4 bg-gray-50 mb-8 space-y-4">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">絞り込み</span>
+          <div className="flex space-x-2">
+            <button onClick={setThisMonth} className="text-[10px] bg-white border border-gray-300 px-2 py-1 rounded hover:bg-gray-100 transition">今月</button>
+            <button onClick={setAllTime} className="text-[10px] bg-white border border-gray-300 px-2 py-1 rounded hover:bg-gray-100 transition">全期間</button>
+          </div>
+        </div>
+        
+        <div className="space-y-3">
+          <div className="flex items-center space-x-2">
+            <label className="text-[10px] font-bold text-gray-400 min-w-[40px]">期間</label>
+            <div className="flex flex-1 items-center space-x-1">
+              <input 
+                type="date" 
+                value={startDate} 
+                onChange={(e) => setStartDate(e.target.value)}
+                className="flex-1 text-xs border border-gray-300 rounded px-2 py-1 outline-none focus:border-blue-500"
+              />
+              <span className="text-gray-400 text-xs">〜</span>
+              <input 
+                type="date" 
+                value={endDate} 
+                onChange={(e) => setEndDate(e.target.value)}
+                className="flex-1 text-xs border border-gray-300 rounded px-2 py-1 outline-none focus:border-blue-500"
+              />
+            </div>
+          </div>
+
+          {(view === 'expense' || view === 'income' || view === 'wallet') && (
+            <div className="flex items-center space-x-2">
+              <label className="text-[10px] font-bold text-gray-400 min-w-[40px]">カテゴリ</label>
+              <select 
+                value={selectedCategoryId}
+                onChange={(e) => setSelectedCategoryId(e.target.value)}
+                className="flex-1 text-xs border border-gray-300 rounded px-2 py-1 outline-none focus:border-blue-500 bg-white"
+              >
+                <option value="">すべてのカテゴリー</option>
+                {filterCategories.map(cat => (
+                  <option key={cat.id} value={cat.id}>{cat.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderTabs = () => (
+    <div className="flex justify-center space-x-2 mb-8">
+      {(['balance', 'wallet', 'expense', 'income'] as AggView[]).map(tab => (
+        <button
+          key={tab}
+          onClick={() => setView(tab)}
+          className={`px-4 py-1 sketch-border transition ${view === tab ? 'bg-gray-300' : 'bg-white hover:bg-gray-50'}`}
+        >
+          {tab === 'balance' ? '残高' : tab === 'wallet' ? '財布' : tab === 'expense' ? '支出' : '収入'}
+        </button>
+      ))}
+    </div>
+  );
+
   return (
     <div className="w-full">
-      <div className="flex justify-center space-x-2 mb-8">
-        {(['balance', 'wallet', 'expense', 'income'] as AggView[]).map(tab => (
-          <button
-            key={tab}
-            onClick={() => setView(tab)}
-            className={`px-4 py-1 sketch-border transition ${view === tab ? 'bg-gray-300' : 'bg-white hover:bg-gray-50'}`}
-          >
-            {tab === 'balance' ? '残高' : tab === 'wallet' ? '財布' : tab === 'expense' ? '支出' : '収入'}
-          </button>
-        ))}
-      </div>
+      {renderTabs()}
 
       {view === 'balance' && (
         <div className="space-y-6">
@@ -302,32 +411,154 @@ const AggregationPage: React.FC = () => {
                 <div key={w.id} className="flex justify-between items-center group">
                   <div className="flex items-center space-x-2">
                     <div className="w-3 h-3 rounded-full" style={{ backgroundColor: w.color || '#333' }} />
-                    <span className="text-gray-600">{w.name}</span>
+                    <span className="text-gray-600">
+                      {w.name}
+                      <span className="ml-2 text-[9px] text-gray-400 uppercase">({w.type === 'bank' ? '口座' : '財布'})</span>
+                    </span>
                   </div>
                   <div className="flex items-center space-x-4">
-                    <span className="font-medium">¥{(w.currentBalance || 0).toLocaleString()}</span>
-                    <button onClick={() => navigate(`/wallet/${w.id}`)} className="text-blue-500 text-xs opacity-0 group-hover:opacity-100 underline">詳細</button>
+                    <span className="font-medium">¥{w.currentBalance.toLocaleString()}</span>
+                    <button onClick={() => navigate(`/wallet/${w.id}`)} className="text-blue-500 text-xs opacity-0 group-hover:opacity-100 underline transition">詳細</button>
                   </div>
                 </div>
               ))}
             </div>
           </div>
-          {/* Credit card payments section... */}
+          <div className="sketch-border p-6 bg-white shadow-sm border-red-200">
+            <h3 className="text-lg font-bold mb-4 flex items-center"><span className="mr-2">💳</span> クレジットカード支払い予定</h3>
+            <div className="space-y-6">
+              {cardPayments.map(card => (
+                <div key={card.id} className="bg-gray-50 rounded-lg p-4 border border-gray-100">
+                  <div className="flex justify-between items-center mb-3">
+                    <div className="flex items-center space-x-2">
+                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: card.color || '#333' }} />
+                      <div className="flex flex-col">
+                        <span className="font-bold text-gray-700">{card.name}</span>
+                        <span className="text-[9px] text-blue-500 font-bold uppercase">引落先: {card.withdrawalAccountName}</span>
+                      </div>
+                    </div>
+                    <span className="text-[10px] bg-gray-200 px-2 py-0.5 rounded text-gray-600">毎月 {card.paymentDay}日払</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    {card.payments.map((p, idx) => (
+                      <div key={idx} className={`${idx === 0 ? 'border-r border-gray-200 pr-2' : 'pl-2'}`}>
+                        <p className="text-[10px] text-gray-400 font-bold uppercase mb-1">{p.label}</p>
+                        <p className={`text-lg font-mono font-bold ${idx === 0 ? 'text-red-600' : 'text-gray-500'}`}>¥{p.amount.toLocaleString()}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              {cardPayments.length === 0 && <p className="text-gray-400 text-sm italic text-center py-4">クレジットカードが登録されていません</p>}
+            </div>
+          </div>
         </div>
       )}
 
-      {/* Other views (expense, income, wallet) rendering logic... */}
       {(view === 'expense' || view === 'income') && (
-        <div className="space-y-8">
-           {/* Filters and charts... */}
-           {renderTransactionTable(view as any)}
+        <div className="space-y-8 animate-in fade-in duration-300">
+          {renderFilter()}
+          
+          <div className="text-center">
+            <h3 className="text-2xl font-bold mb-2">
+              {view === 'expense' ? '支出合計' : '収入合計'}: 
+              ¥{getCategoryData(view as any).reduce((a, b) => a + b.value, 0).toLocaleString()}
+            </h3>
+          </div>
+          
+          {getCategoryData(view as any).length > 0 ? (
+            <>
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie 
+                      data={getCategoryData(view as any)} 
+                      cx="50%" 
+                      cy="50%" 
+                      innerRadius={60} 
+                      outerRadius={80} 
+                      paddingAngle={5} 
+                      dataKey="value"
+                      startAngle={90}
+                      endAngle={-270}
+                    >
+                      {getCategoryData(view as any).map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color || DEFAULT_COLORS[index % DEFAULT_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip contentStyle={{ borderRadius: '8px', border: '2px solid #333' }} formatter={(value: number) => [`¥${value.toLocaleString()}`, '金額']} />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              
+              <div className="space-y-4">
+                <h4 className="text-lg font-semibold border-b pb-2">内訳</h4>
+                {getCategoryData(view as any).map((item, idx) => (
+                  <div key={idx} className="flex items-center space-x-4">
+                    <div className="flex-1">
+                      <div className="flex justify-between text-sm mb-1">
+                        <span className="flex items-center space-x-2">
+                          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }} />
+                          <span className="font-medium text-gray-700">{item.name}</span>
+                        </span>
+                        <span className="font-mono font-bold">¥{item.value.toLocaleString()}</span>
+                      </div>
+                      <div className="w-full bg-gray-100 h-2 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full transition-all duration-500" 
+                          style={{ 
+                            width: `${(item.value / Math.max(1, getCategoryData(view as any).reduce((a,b) => a+b.value, 0))) * 100}%`,
+                            backgroundColor: item.color
+                          }} 
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <p className="text-center text-gray-400 italic py-8">データがありません</p>
+          )}
+
+          {renderTransactionTable(view as 'expense' | 'income')}
         </div>
       )}
 
       {view === 'wallet' && (
-        <div className="space-y-8">
-          {/* Wallet list and transactions... */}
-          {renderTransactionTable('all')}
+        <div className="space-y-8 animate-in fade-in duration-300">
+          <div>
+            <h3 className="text-sm font-bold text-gray-400 mb-4 uppercase tracking-widest">資産 (口座・現金など)</h3>
+            <div className="grid grid-cols-2 gap-4">
+              {assetWallets.map(w => (
+                <div key={w.id} onClick={() => navigate(`/wallet/${w.id}`)} className="sketch-border p-4 bg-white cursor-pointer hover:shadow-md transition-all active:scale-95" style={{ borderLeft: `6px solid ${w.color || '#333'}` }}>
+                  <div className="flex justify-between items-start">
+                    <h4 className="font-bold text-gray-700 truncate">{w.name}</h4>
+                  </div>
+                  <p className="text-xl mt-2 font-mono text-green-700">¥{w.currentBalance.toLocaleString()}</p>
+                </div>
+              ))}
+              {assetWallets.length === 0 && <p className="col-span-2 text-gray-400 text-sm text-center py-4">資産口座がありません</p>}
+            </div>
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-gray-400 mb-4 uppercase tracking-widest">負債 (クレジットカード)</h3>
+            <div className="grid grid-cols-2 gap-4">
+              {cardWallets.map(w => (
+                <div key={w.id} onClick={() => navigate(`/wallet/${w.id}`)} className="sketch-border p-4 bg-white cursor-pointer hover:shadow-md transition-all active:scale-95 border-red-200" style={{ borderLeft: `6px solid ${w.color || '#ef4444'}` }}>
+                  <h4 className="font-bold text-gray-700 truncate">{w.name}</h4>
+                  <p className="text-xl mt-2 font-mono text-red-600">¥{w.currentBalance.toLocaleString()}</p>
+                </div>
+              ))}
+              {cardWallets.length === 0 && <p className="col-span-2 text-gray-400 text-sm text-center py-4">負債口座がありません</p>}
+            </div>
+          </div>
+          
+          <div className="pt-4">
+            {renderFilter()}
+            {renderTransactionTable('all')}
+          </div>
         </div>
       )}
 

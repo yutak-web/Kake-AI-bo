@@ -39,6 +39,7 @@ const SettingsPage: React.FC = () => {
   const [closingDay, setClosingDay] = useState('31');
   const [paymentDay, setPaymentDay] = useState('26');
   const [initialPaymentAmount, setInitialPaymentAmount] = useState('');
+  const [wWithdrawalWalletId, setWWithdrawalWalletId] = useState('');
 
   const [cName, setCName] = useState('');
   const [cType, setCType] = useState<'income' | 'expense'>('expense');
@@ -54,7 +55,6 @@ const SettingsPage: React.FC = () => {
     fetchData();
   }, []);
 
-  // Sort Assets (Banks -> Others) and Cards
   const assetWallets = wallets
     .filter(w => w.type !== 'card')
     .sort((a, b) => {
@@ -65,6 +65,8 @@ const SettingsPage: React.FC = () => {
   const cardWallets = wallets
     .filter(w => w.type === 'card')
     .sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+
+  const bankWallets = wallets.filter(w => w.type === 'bank');
 
   const handleWalletSubmit = async () => {
     if (!wName) return;
@@ -80,6 +82,7 @@ const SettingsPage: React.FC = () => {
       if (closingDay) walletData.closingDay = Number(closingDay);
       if (paymentDay) walletData.paymentDay = Number(paymentDay);
       walletData.initialPaymentAmount = Number(initialPaymentAmount) || 0;
+      if (wWithdrawalWalletId) walletData.withdrawalWalletId = wWithdrawalWalletId;
     }
 
     try {
@@ -106,6 +109,7 @@ const SettingsPage: React.FC = () => {
     setClosingDay(String(w.closingDay || '31'));
     setPaymentDay(String(w.paymentDay || '26'));
     setInitialPaymentAmount(String(w.initialPaymentAmount || ''));
+    setWWithdrawalWalletId(w.withdrawalWalletId || '');
   };
 
   const handleDeleteWallet = async (id: string) => {
@@ -124,6 +128,7 @@ const SettingsPage: React.FC = () => {
     setClosingDay('31');
     setPaymentDay('26');
     setInitialPaymentAmount('');
+    setWWithdrawalWalletId('');
   };
 
   const handleCategorySubmit = async () => {
@@ -180,7 +185,14 @@ const SettingsPage: React.FC = () => {
         <div className="w-3 h-3 rounded-full" style={{ backgroundColor: w.color || '#333' }} />
         <div className="flex flex-col">
           <span className="font-medium text-sm">{w.name}</span>
-          <span className="text-[10px] text-gray-400 uppercase">{getTypeName(w.type)}</span>
+          <span className="text-[10px] text-gray-400 uppercase">
+            {getTypeName(w.type)}
+            {w.type === 'card' && w.withdrawalWalletId && (
+              <span className="ml-1 text-blue-400">
+                (引落: {bankWallets.find(bw => bw.id === w.withdrawalWalletId)?.name || '不明'})
+              </span>
+            )}
+          </span>
         </div>
       </div>
       <div className="flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -213,7 +225,6 @@ const SettingsPage: React.FC = () => {
         </button>
       </div>
 
-      {/* Wallet Modal */}
       {modal === 'wallet' && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white w-full max-w-md sketch-border p-8 max-h-[90vh] overflow-y-auto">
@@ -289,6 +300,19 @@ const SettingsPage: React.FC = () => {
                 </div>
               ) : (
                 <div className="bg-gray-50 p-4 rounded-lg space-y-4 border border-gray-200">
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">引き落とし口座</label>
+                    <select 
+                      value={wWithdrawalWalletId} 
+                      onChange={e => setWWithdrawalWalletId(e.target.value)}
+                      className="w-full border-2 border-gray-300 rounded px-3 py-2 focus:border-blue-500 outline-none bg-white"
+                    >
+                      <option value="">設定なし</option>
+                      {bankWallets.map(bw => (
+                        <option key={bw.id} value={bw.id}>{bw.name}</option>
+                      ))}
+                    </select>
+                  </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="text-xs text-gray-500 mb-1 block">締日 (日)</label>
@@ -328,7 +352,6 @@ const SettingsPage: React.FC = () => {
         </div>
       )}
 
-      {/* Category Modal */}
       {modal === 'category' && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white w-full max-w-md sketch-border p-8">
