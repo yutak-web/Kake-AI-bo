@@ -1,10 +1,23 @@
-
-import React from 'react';
-import { Outlet, NavLink } from 'react-router-dom';
+import React from "react";
+import { Outlet, NavLink, useNavigate } from "react-router-dom";
+import { auth } from "../firebase";
 
 const Layout: React.FC = () => {
+  const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    try {
+      await auth.signOut();
+      navigate("/");
+    } catch (error) {
+      console.error("Logout failed", error);
+      alert("ログアウトに失敗しました");
+    }
+  };
+
   const activeStyle = "bg-gray-200 sketch-border text-black px-4 py-1";
-  const inactiveStyle = "bg-white sketch-border text-gray-600 px-4 py-1 hover:bg-gray-100 transition";
+  const inactiveStyle =
+    "bg-white sketch-border text-gray-600 px-4 py-1 hover:bg-gray-100 transition";
 
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col items-center py-8 px-4">
@@ -12,24 +25,36 @@ const Layout: React.FC = () => {
         {/* Navigation Tabs */}
         <div className="p-6 border-b border-gray-200">
           <div className="flex justify-center space-x-4 mb-4">
-            <NavLink 
-              to="/registration" 
-              className={({ isActive }) => isActive ? activeStyle : inactiveStyle}
+            <NavLink
+              to="/registration"
+              className={({ isActive }) =>
+                isActive ? activeStyle : inactiveStyle
+              }
             >
               収支登録
             </NavLink>
-            <NavLink 
-              to="/aggregation" 
-              className={({ isActive }) => isActive ? activeStyle : inactiveStyle}
+            <NavLink
+              to="/aggregation"
+              className={({ isActive }) =>
+                isActive ? activeStyle : inactiveStyle
+              }
             >
               集計
             </NavLink>
-            <NavLink 
-              to="/settings" 
-              className={({ isActive }) => isActive ? activeStyle : inactiveStyle}
+            <NavLink
+              to="/settings"
+              className={({ isActive }) =>
+                isActive ? activeStyle : inactiveStyle
+              }
             >
               設定
             </NavLink>
+            <button
+              onClick={handleLogout}
+              className={`${inactiveStyle} text-red-500 hover:bg-red-50 hover:text-red-600`}
+            >
+              ログアウト
+            </button>
           </div>
           <hr className="border-gray-300" />
         </div>

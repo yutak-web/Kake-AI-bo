@@ -1,8 +1,8 @@
-
-export type WalletType = 'bank' | 'other' | 'card';
+export type WalletType = "bank" | "other" | "card";
 
 export interface Wallet {
   id: string;
+  userId?: string;
   name: string;
   type: WalletType;
   initialBalance: number;
@@ -16,12 +16,13 @@ export interface Wallet {
 
 export interface Category {
   id: string;
+  userId?: string;
   name: string;
-  type: 'income' | 'expense';
+  type: "income" | "expense";
   color?: string;
 }
 
-export type TransactionType = 'income' | 'expense' | 'transfer';
+export type TransactionType = "income" | "expense" | "transfer";
 
 export interface Transaction {
   id: string;
@@ -30,8 +31,8 @@ export interface Transaction {
   amount: number;
   type: TransactionType;
   fromWalletId?: string; // used for expense and transfer
-  toWalletId?: string;   // used for income and transfer
+  toWalletId?: string; // used for income and transfer
   categoryId?: string;
   description: string; // "内容"
-  note: string;        // "備考"
+  note: string; // "備考"
 }
