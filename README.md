@@ -1,19 +1,44 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Kake-AI-bo
 
-# Run and deploy your AI Studio app
+私の「使いやすい」を追求した、スマートな家計簿アプリケーションです。
+複数のウォレット（現金、銀行、クレジットカード、電子マネーなど）を一元管理し、日々の収支を簡単に記録・分析することができます。
 
-This contains everything you need to run your app locally.
+> [!NOTE]
+> このプロジェクトは Google AI Studio を使用して作成、またはその支援を受けて開発されました。
+> View your app in AI Studio: https://ai.studio/apps/drive/15vwqACzhnXCslmsAbCsViLbnDoNjIWS3
 
-View your app in AI Studio: https://ai.studio/apps/drive/15vwqACzhnXCslmsAbCsViLbnDoNjIWS3
+## 主な機能
 
-## Run Locally
+- **ダッシュボード & 集計**: 資産推移やカテゴリ別の支出をグラフで直感的に把握できます（`AggregationPage`）。
+- **ウォレット管理**: 複数の支払い手段（ウォレット）ごとの残高や履歴を管理できます（`WalletDetailsPage`）。
+- **簡単入力**: 日々の支出や振替をスムーズに登録できます（`RegistrationPage`）。
+- **カスタマイズ**: カテゴリやウォレットの設定を自分好みに変更可能です（`SettingsPage`）。
+- **セキュアな認証**: Google アカウントを使用したログイン機能を搭載しています（`LoginPage`）。
 
-**Prerequisites:** Node.js
+## 技術スタック
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+このプロジェクトは以下の技術を使用して構築されています。
+
+- **Frontend Framework**: [React](https://react.dev/)
+- **Build Tool**: [Vite](https://vitejs.dev/)
+- **Language**: [TypeScript](https://www.typescriptlang.org/)
+- **Backend / Database**: [Firebase](https://firebase.google.com/) (Authentication, Firestore)
+- **Routing**: [React Router](https://reactrouter.com/)
+- **Visualization**: [Recharts](https://recharts.org/)
+
+## ローカルでの実行方法
+
+**前提条件:** Node.js がインストールされていること。
+
+1. リポジトリをクローンします。
+2. 依存パッケージをインストールします。
+   ```bash
+   npm install
+   ```
+3. 環境変数を設定します。
+   `.env.local` ファイルを作成し、Firebase の設定や `GEMINI_API_KEY` 等を記述してください。
+4. 開発サーバーを起動します。
+   ```bash
+   npm run dev
+   ```
+5. ブラウザで `http://localhost:5173` (またはコンソールに表示されるURL) にアクセスします。
