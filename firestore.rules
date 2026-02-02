@@ -1,0 +1,33 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 共通関数: ログインしていて、かつリクエストされたリソースのuserIdが自分のIDと一致するか
+    function isOwner() {
+      return request.auth != null && request.auth.uid == resource.data.userId;
+    }
+    
+    // 共通関数: 作成時、データ内に正しいuserIdが含まれているか
+    function isValidCreate() {
+      return request.auth != null && request.resource.data.userId == request.auth.uid;
+    }
+
+    // Wallets collection
+    match /wallets/{walletId} {
+      allow read, update, delete: if isOwner();
+      allow create: if isValidCreate();
+    }
+
+    // Categories collection
+    match /categories/{categoryId} {
+      allow read, update, delete: if isOwner();
+      allow create: if isValidCreate();
+    }
+
+    // Transactions collection
+    match /transactions/{transactionId} {
+      allow read, update, delete: if isOwner();
+      allow create: if isValidCreate();
+    }
+  }
+}
