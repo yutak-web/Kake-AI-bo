@@ -60,14 +60,14 @@ const TrashIcon = () => (
   </svg>
 );
 
-type PeriodOption = { label: string; days: number };
-const PERIODS: PeriodOption[] = [
-  { label: "1週間", days: 7 },
-  { label: "1ヶ月", days: 30 },
-  { label: "3ヶ月", days: 90 },
-  { label: "半年", days: 180 },
-  { label: "1年", days: 365 },
-];
+// type PeriodOption = { label: string; days: number };
+// const PERIODS: PeriodOption[] = [
+//   { label: "1週間", days: 7 },
+//   { label: "1ヶ月", days: 30 },
+//   { label: "3ヶ月", days: 90 },
+//   { label: "半年", days: 180 },
+//   { label: "1年", days: 365 },
+// ];
 
 const WalletDetailsPage: React.FC = () => {
   const { walletId } = useParams<{ walletId: string }>();
@@ -76,7 +76,21 @@ const WalletDetailsPage: React.FC = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
-  const [periodDays, setPeriodDays] = useState<number>(30);
+  const getInitialDates = () => {
+    const today = new Date();
+    const first = new Date(today.getFullYear(), today.getMonth(), 1);
+    const last = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+    return {
+      firstDay: formatDateLocal(first),
+      lastDay: formatDateLocal(last),
+    };
+  };
+
+  const { firstDay, lastDay } = getInitialDates();
+
+  const [startDate, setStartDate] = useState(firstDay);
+  const [endDate, setEndDate] = useState(lastDay);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string>("");
 
   const fetchData = async () => {
     const [w, t, c] = await Promise.all([
@@ -86,11 +100,10 @@ const WalletDetailsPage: React.FC = () => {
     ]);
     setAllWallets(w);
     setWallet(w.find((x) => x.id === walletId) || null);
-    // Filter transactions for this wallet
     setTransactions(
       t.filter(
-        (tx) => tx.fromWalletId === walletId || tx.toWalletId === walletId
-      )
+        (tx) => tx.fromWalletId === walletId || tx.toWalletId === walletId,
+      ),
     );
     setCategories(c);
   };
@@ -124,26 +137,88 @@ const WalletDetailsPage: React.FC = () => {
     }
   };
 
+  const setThisMonth = () => {
+    const { firstDay, lastDay } = getInitialDates();
+    setStartDate(firstDay);
+    setEndDate(lastDay);
+  };
+
+  const setLastMonth = () => {
+    const today = new Date();
+    const first = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    const last = new Date(today.getFullYear(), today.getMonth(), 0);
+    setStartDate(formatDateLocal(first));
+    setEndDate(formatDateLocal(last));
+  };
+
+  const setAllTime = () => {
+    setStartDate("");
+    setEndDate("");
+  };
+
+  const filteredTransactions = useMemo(() => {
+    return transactions.filter((tx) => {
+      const dateInRange =
+        (!startDate || tx.date >= startDate) &&
+        (!endDate || tx.date <= endDate);
+      const categoryMatches =
+        !selectedCategoryId || tx.categoryId === selectedCategoryId;
+      return dateInRange && categoryMatches;
+    });
+  }, [transactions, startDate, endDate, selectedCategoryId]);
+
   const { chartData, currentBalance } = useMemo(() => {
     if (!wallet) return { chartData: [], currentBalance: 0 };
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const startDate = new Date(today);
-    startDate.setDate(today.getDate() - periodDays);
-    const startDateStr = formatDateLocal(startDate);
-
-    // Calculate total current balance
+    // Calculate total current balance (regardless of filter)
     const totalBalance = transactions.reduce((acc, tx) => {
       if (tx.fromWalletId === wallet.id) return acc - tx.amount;
       if (tx.toWalletId === wallet.id) return acc + tx.amount;
       return acc;
     }, Number(wallet.initialBalance));
 
-    // Calculate starting balance for the chart period
+    // If no date range, maybe show last 30 days? Or all time?
+    // If all time (empty start/end), we need to find min/max date from transactions.
+    let start = new Date();
+    let end = new Date();
+
+    if (startDate) {
+      start = new Date(startDate);
+    } else {
+      // Default / All time start: find earliest tx or today
+      if (transactions.length > 0) {
+        const earliest = transactions.reduce(
+          (min, tx) => (tx.date < min ? tx.date : min),
+          transactions[0].date,
+        );
+        start = new Date(earliest);
+      } else {
+        start = new Date();
+        start.setDate(start.getDate() - 30);
+      }
+    }
+
+    if (endDate) {
+      end = new Date(endDate);
+    } else {
+      end = new Date(); // Today
+    }
+
+    // Ensure start <= end
+    if (start > end) {
+      const temp = start;
+      start = end;
+      end = temp;
+    }
+
+    // Normalized strings
+    const startStr = formatDateLocal(start);
+    const endStr = formatDateLocal(end);
+
+    // Calculate starting balance before the start date
     let balanceAtStart = Number(wallet.initialBalance);
     transactions.forEach((tx) => {
-      if (tx.date < startDateStr) {
+      if (tx.date < startStr) {
         if (tx.fromWalletId === wallet.id) balanceAtStart -= tx.amount;
         if (tx.toWalletId === wallet.id) balanceAtStart += tx.amount;
       }
@@ -153,12 +228,24 @@ const WalletDetailsPage: React.FC = () => {
     const data = [];
     let runningBalance = balanceAtStart;
 
-    for (let i = 0; i <= periodDays; i++) {
-      const currentDate = new Date(startDate);
-      currentDate.setDate(startDate.getDate() + i);
-      const currentDateStr = formatDateLocal(currentDate);
+    // Iterate from start to end
+    const curr = new Date(start);
+    // Safety break to avoid infinite loop if dates are weird
+    let loops = 0;
+    while (curr <= end && loops < 3660) {
+      // Max 10 years
+      const currentDateStr = formatDateLocal(curr);
 
       // Add all transactions for this specific day
+      // Note: Chart should probably NOT be filtered by category if it shows "Balance"?
+      // Usually "Balance History" implies actual wallet balance.
+      // If I filter by category "Food", showing "Balance" is weird.
+      // But the user asked for "Filtering" on the "History List".
+      // They might expect the chart to update too?
+      // If I filter "Food", the "Balance" line would only go down?
+      // That's usually "Spending History", not "Balance History".
+      // Let's keep the chart showing ACTUAL balance for the period, unaffected by Category filter.
+      // BUT affected by Date filter.
       transactions.forEach((tx) => {
         if (tx.date === currentDateStr) {
           if (tx.fromWalletId === wallet.id) runningBalance -= tx.amount;
@@ -166,18 +253,23 @@ const WalletDetailsPage: React.FC = () => {
         }
       });
 
+      const daysDiff = (end.getTime() - start.getTime()) / (1000 * 3600 * 24);
+
       data.push({
         date: currentDateStr,
         displayDate:
-          periodDays > 180
-            ? `${currentDate.getMonth() + 1}月` // Yearly view: show months
-            : `${currentDate.getMonth() + 1}/${currentDate.getDate()}`, // Others: show day/month
+          daysDiff > 180
+            ? `${curr.getMonth() + 1}月`
+            : `${curr.getMonth() + 1}/${curr.getDate()}`,
         balance: runningBalance,
       });
+
+      curr.setDate(curr.getDate() + 1);
+      loops++;
     }
 
     return { chartData: data, currentBalance: totalBalance };
-  }, [wallet, transactions, periodDays]);
+  }, [wallet, transactions, startDate, endDate]);
 
   if (!wallet)
     return (
@@ -187,11 +279,13 @@ const WalletDetailsPage: React.FC = () => {
     );
 
   // Determine label intervals for chart to prevent crowding
+  // Determine label intervals for chart to prevent crowding
   const getXAxisInterval = () => {
-    if (periodDays <= 7) return 0;
-    if (periodDays <= 30) return 6;
-    if (periodDays <= 90) return 14;
-    if (periodDays <= 180) return 29;
+    // If we have data, we can estimate days
+    if (chartData.length <= 7) return 0;
+    if (chartData.length <= 30) return 6;
+    if (chartData.length <= 90) return 14;
+    if (chartData.length <= 180) return 29;
     return 60;
   };
 
@@ -220,27 +314,79 @@ const WalletDetailsPage: React.FC = () => {
 
       <div className="space-y-4">
         {/* Period Selector */}
-        <div className="flex justify-center space-x-1">
-          {PERIODS.map((p) => (
-            <button
-              key={p.days}
-              onClick={() => setPeriodDays(p.days)}
-              className={`px-3 py-1 text-[10px] sm:text-xs sketch-border transition-all duration-200 ${
-                periodDays === p.days
-                  ? "bg-gray-800 text-white translate-y-0.5"
-                  : "bg-white text-gray-600 hover:bg-gray-50"
-              }`}
-            >
-              {p.label}
-            </button>
-          ))}
+        {/* Filter UI */}
+        <div className="sketch-border p-4 bg-gray-50 mb-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">
+              絞り込み
+            </span>
+            <div className="flex space-x-2">
+              <button
+                onClick={setLastMonth}
+                className="text-[10px] bg-white border border-gray-300 px-2 py-1 rounded hover:bg-gray-100 transition"
+              >
+                先月
+              </button>
+              <button
+                onClick={setThisMonth}
+                className="text-[10px] bg-white border border-gray-300 px-2 py-1 rounded hover:bg-gray-100 transition"
+              >
+                今月
+              </button>
+              <button
+                onClick={setAllTime}
+                className="text-[10px] bg-white border border-gray-300 px-2 py-1 rounded hover:bg-gray-100 transition"
+              >
+                全期間
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex items-center space-x-2">
+              <label className="text-[10px] font-bold text-gray-400 min-w-[40px]">
+                期間
+              </label>
+              <div className="flex flex-1 items-center space-x-1">
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="flex-1 text-xs border border-gray-300 rounded px-2 py-1 outline-none focus:border-blue-500"
+                />
+                <span className="text-gray-400 text-xs">〜</span>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="flex-1 text-xs border border-gray-300 rounded px-2 py-1 outline-none focus:border-blue-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <label className="text-[10px] font-bold text-gray-400 min-w-[40px]">
+                カテゴリ
+              </label>
+              <select
+                value={selectedCategoryId}
+                onChange={(e) => setSelectedCategoryId(e.target.value)}
+                className="flex-1 text-xs border border-gray-300 rounded px-2 py-1 outline-none focus:border-blue-500 bg-white"
+              >
+                <option value="">すべてのカテゴリー</option>
+                {categories.map((cat) => (
+                  <option key={cat.id} value={cat.id}>
+                    {cat.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
         </div>
 
         <div className="h-80 sketch-border p-4 bg-white shadow-sm">
           <h4 className="text-sm font-bold text-gray-400 mb-4 flex justify-between items-center">
-            <span>
-              残高推移 ({PERIODS.find((p) => p.days === periodDays)?.label})
-            </span>
+            <span>残高推移</span>
             <span className="text-[10px] bg-gray-100 px-2 py-0.5 rounded text-gray-500 uppercase">
               Daily Final Balance
             </span>
@@ -295,7 +441,7 @@ const WalletDetailsPage: React.FC = () => {
         <h4 className="font-bold border-b border-gray-200 pb-2 flex justify-between items-center">
           <span>履歴一覧</span>
           <span className="text-xs font-normal text-gray-400">
-            {transactions.length} 件
+            {filteredTransactions.length} 件
           </span>
         </h4>
         <div className="overflow-x-auto">
@@ -317,17 +463,17 @@ const WalletDetailsPage: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {[...transactions]
+              {[...filteredTransactions]
                 .sort(
                   (a, b) =>
-                    new Date(b.date).getTime() - new Date(a.date).getTime()
+                    new Date(b.date).getTime() - new Date(a.date).getTime(),
                 )
                 .map((tx) => {
                   const isOut = tx.fromWalletId === wallet.id;
                   const cat = categories.find((c) => c.id === tx.categoryId);
                   const otherWalletId = isOut ? tx.toWalletId : tx.fromWalletId;
                   const otherWallet = allWallets.find(
-                    (w) => w.id === otherWalletId
+                    (w) => w.id === otherWalletId,
                   );
                   return (
                     <tr
@@ -343,15 +489,15 @@ const WalletDetailsPage: React.FC = () => {
                             tx.type === "income"
                               ? "bg-green-100 text-green-800"
                               : tx.type === "expense"
-                              ? "bg-red-100 text-red-800"
-                              : "bg-yellow-100 text-yellow-800"
+                                ? "bg-red-100 text-red-800"
+                                : "bg-yellow-100 text-yellow-800"
                           }`}
                         >
                           {tx.type === "income"
                             ? "収入"
                             : tx.type === "expense"
-                            ? "支出"
-                            : "移動"}
+                              ? "支出"
+                              : "移動"}
                         </span>
                       </td>
                       <td className="px-2 py-4">
@@ -415,7 +561,8 @@ const WalletDetailsPage: React.FC = () => {
                     </tr>
                   );
                 })}
-              {transactions.length === 0 && (
+
+              {filteredTransactions.length === 0 && (
                 <tr>
                   <td
                     colSpan={4}

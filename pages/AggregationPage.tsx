@@ -439,6 +439,14 @@ const AggregationPage: React.FC = () => {
     setEndDate(lastDay);
   };
 
+  const setLastMonth = () => {
+    const today = new Date();
+    const first = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    const last = new Date(today.getFullYear(), today.getMonth(), 0);
+    setStartDate(formatDateLocal(first));
+    setEndDate(formatDateLocal(last));
+  };
+
   const setAllTime = () => {
     setStartDate("");
     setEndDate("");
@@ -459,6 +467,12 @@ const AggregationPage: React.FC = () => {
             絞り込み
           </span>
           <div className="flex space-x-2">
+            <button
+              onClick={setLastMonth}
+              className="text-[10px] bg-white border border-gray-300 px-2 py-1 rounded hover:bg-gray-100 transition"
+            >
+              先月
+            </button>
             <button
               onClick={setThisMonth}
               className="text-[10px] bg-white border border-gray-300 px-2 py-1 rounded hover:bg-gray-100 transition"
@@ -496,7 +510,7 @@ const AggregationPage: React.FC = () => {
             </div>
           </div>
 
-          {(view === "expense" || view === "income" || view === "wallet") && (
+          {(view === "expense" || view === "income") && (
             <div className="flex items-center space-x-2">
               <label className="text-[10px] font-bold text-gray-400 min-w-[40px]">
                 カテゴリ
@@ -694,9 +708,9 @@ const AggregationPage: React.FC = () => {
                       data={getCategoryData(view as any)}
                       cx="50%"
                       cy="50%"
-                      innerRadius={60}
-                      outerRadius={80}
-                      paddingAngle={5}
+                      innerRadius={30}
+                      outerRadius={120}
+                      paddingAngle={0}
                       dataKey="value"
                       startAngle={90}
                       endAngle={-270}
@@ -716,12 +730,11 @@ const AggregationPage: React.FC = () => {
                         borderRadius: "8px",
                         border: "2px solid #333",
                       }}
-                      formatter={(value: number) => [
+                      formatter={(value: number, name: string) => [
                         `¥${value.toLocaleString()}`,
-                        "金額",
+                        name,
                       ]}
                     />
-                    <Legend />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
