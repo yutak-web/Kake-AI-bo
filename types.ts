@@ -4,6 +4,7 @@ export interface Wallet {
   id: string;
   userId?: string;
   name: string;
+  order?: number;
   type: WalletType;
   initialBalance: number;
   color?: string;
@@ -18,6 +19,7 @@ export interface Category {
   id: string;
   userId?: string;
   name: string;
+  order?: number;
   type: "income" | "expense";
   color?: string;
 }

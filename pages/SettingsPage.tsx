@@ -5,9 +5,11 @@ import {
   addWallet,
   updateWallet,
   deleteWallet,
+  updateWalletOrder,
   addCategory,
   updateCategory,
   deleteCategory,
+  updateCategoryOrder,
 } from "../services/db";
 import { Wallet, Category, WalletType } from "../types";
 
@@ -45,6 +47,40 @@ const TrashIcon = () => (
   </svg>
 );
 
+const UpIcon = () => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    fill="none"
+    viewBox="0 0 24 24"
+    strokeWidth={1.5}
+    stroke="currentColor"
+    className="w-4 h-4"
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="M4.5 15.75l7.5-7.5 7.5 7.5"
+    />
+  </svg>
+);
+
+const DownIcon = () => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    fill="none"
+    viewBox="0 0 24 24"
+    strokeWidth={1.5}
+    stroke="currentColor"
+    className="w-4 h-4"
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="M19.5 8.25l-7.5 7.5-7.5-7.5"
+    />
+  </svg>
+);
+
 const SettingsPage: React.FC = () => {
   const [wallets, setWallets] = useState<Wallet[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -76,17 +112,8 @@ const SettingsPage: React.FC = () => {
     fetchData();
   }, []);
 
-  const assetWallets = wallets
-    .filter((w) => w.type !== "card")
-    .sort((a, b) => {
-      if (a.type !== b.type) return a.type === "bank" ? -1 : 1;
-      return a.name.localeCompare(b.name, "ja");
-    });
-
-  const cardWallets = wallets
-    .filter((w) => w.type === "card")
-    .sort((a, b) => a.name.localeCompare(b.name, "ja"));
-
+  const assetWallets = wallets.filter((w) => w.type !== "card");
+  const cardWallets = wallets.filter((w) => w.type === "card");
   const bankWallets = wallets.filter((w) => w.type === "bank");
 
   const handleWalletSubmit = async () => {
@@ -140,12 +167,38 @@ const SettingsPage: React.FC = () => {
   const handleDeleteWallet = async (id: string) => {
     if (
       window.confirm(
-        "この財布を削除しますか？関連する履歴の表示に影響が出る可能性があります。"
+        "この財布を削除しますか？関連する履歴の表示に影響が出る可能性があります。",
       )
     ) {
       await deleteWallet(id);
       fetchData();
     }
+  };
+
+  const handleMoveWallet = async (
+    index: number,
+    direction: "up" | "down",
+    list: Wallet[],
+  ) => {
+    if (direction === "up" && index === 0) return;
+    if (direction === "down" && index === list.length - 1) return;
+
+    const newWallets = [...wallets];
+    const targetListIndex = wallets.findIndex((w) => w.id === list[index].id);
+    const swapListIndex = wallets.findIndex(
+      (w) => w.id === list[index + (direction === "up" ? -1 : 1)].id,
+    );
+
+    if (targetListIndex === -1 || swapListIndex === -1) return;
+
+    // Swap in the main list
+    [newWallets[targetListIndex], newWallets[swapListIndex]] = [
+      newWallets[swapListIndex],
+      newWallets[targetListIndex],
+    ];
+
+    setWallets(newWallets); // Optimistic update
+    await updateWalletOrder(newWallets);
   };
 
   const resetWalletForm = () => {
@@ -193,6 +246,33 @@ const SettingsPage: React.FC = () => {
     }
   };
 
+  const handleMoveCategory = async (
+    index: number,
+    direction: "up" | "down",
+    filteredList: Category[],
+  ) => {
+    if (direction === "up" && index === 0) return;
+    if (direction === "down" && index === filteredList.length - 1) return;
+
+    // We need to reorder the entire categories list, but essentially we are just swapping orders of the two items
+    const itemA = filteredList[index];
+    const itemB = filteredList[index + (direction === "up" ? -1 : 1)];
+
+    const newCategories = [...categories];
+    const indexA = newCategories.findIndex((c) => c.id === itemA.id);
+    const indexB = newCategories.findIndex((c) => c.id === itemB.id);
+
+    if (indexA === -1 || indexB === -1) return;
+
+    [newCategories[indexA], newCategories[indexB]] = [
+      newCategories[indexB],
+      newCategories[indexA],
+    ];
+
+    setCategories(newCategories);
+    await updateCategoryOrder(newCategories);
+  };
+
   const resetCategoryForm = () => {
     setEditingId(null);
     setCName("");
@@ -212,7 +292,7 @@ const SettingsPage: React.FC = () => {
     }
   };
 
-  const renderWalletItem = (w: Wallet) => (
+  const renderWalletItem = (w: Wallet, index: number, list: Wallet[]) => (
     <div
       key={w.id}
       className="flex justify-between py-2 items-center bg-gray-50 px-3 rounded-lg group"
@@ -237,7 +317,27 @@ const SettingsPage: React.FC = () => {
           </span>
         </div>
       </div>
-      <div className="flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div className="flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity items-center">
+        <div className="flex flex-col mr-2 space-y-1">
+          <button
+            onClick={() => handleMoveWallet(index, "up", list)}
+            disabled={index === 0}
+            className={`p-0.5 rounded hover:bg-gray-200 ${
+              index === 0 ? "text-gray-300" : "text-gray-600"
+            }`}
+          >
+            <UpIcon />
+          </button>
+          <button
+            onClick={() => handleMoveWallet(index, "down", list)}
+            disabled={index === list.length - 1}
+            className={`p-0.5 rounded hover:bg-gray-200 ${
+              index === list.length - 1 ? "text-gray-300" : "text-gray-600"
+            }`}
+          >
+            <DownIcon />
+          </button>
+        </div>
         <button
           onClick={() => handleEditWallet(w)}
           className="p-1.5 hover:bg-blue-100 rounded text-blue-600 transition-colors"
@@ -307,7 +407,9 @@ const SettingsPage: React.FC = () => {
                       資産 (口座・現金)
                     </h4>
                     <div className="space-y-2">
-                      {assetWallets.map(renderWalletItem)}
+                      {assetWallets.map((w, i) =>
+                        renderWalletItem(w, i, assetWallets),
+                      )}
                       {assetWallets.length === 0 && (
                         <p className="text-[10px] text-gray-300 italic px-2">
                           なし
@@ -320,7 +422,9 @@ const SettingsPage: React.FC = () => {
                       負債 (クレカ)
                     </h4>
                     <div className="space-y-2">
-                      {cardWallets.map(renderWalletItem)}
+                      {cardWallets.map((w, i) =>
+                        renderWalletItem(w, i, cardWallets),
+                      )}
                       {cardWallets.length === 0 && (
                         <p className="text-[10px] text-gray-300 italic px-2">
                           なし
@@ -498,7 +602,7 @@ const SettingsPage: React.FC = () => {
               ) : (
                 categories
                   .filter((c) => c.type === cType)
-                  .map((c) => (
+                  .map((c, i, arr) => (
                     <div
                       key={c.id}
                       className="py-2 px-3 bg-gray-50 rounded-lg flex items-center justify-between group"
@@ -510,7 +614,29 @@ const SettingsPage: React.FC = () => {
                         />
                         <span className="text-sm font-medium">{c.name}</span>
                       </div>
-                      <div className="flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity items-center">
+                        <div className="flex flex-col mr-2 space-y-1">
+                          <button
+                            onClick={() => handleMoveCategory(i, "up", arr)}
+                            disabled={i === 0}
+                            className={`p-0.5 rounded hover:bg-gray-200 ${
+                              i === 0 ? "text-gray-300" : "text-gray-600"
+                            }`}
+                          >
+                            <UpIcon />
+                          </button>
+                          <button
+                            onClick={() => handleMoveCategory(i, "down", arr)}
+                            disabled={i === arr.length - 1}
+                            className={`p-0.5 rounded hover:bg-gray-200 ${
+                              i === arr.length - 1
+                                ? "text-gray-300"
+                                : "text-gray-600"
+                            }`}
+                          >
+                            <DownIcon />
+                          </button>
+                        </div>
                         <button
                           onClick={() => handleEditCategory(c)}
                           className="p-1.5 hover:bg-blue-100 rounded text-blue-600 transition-colors"

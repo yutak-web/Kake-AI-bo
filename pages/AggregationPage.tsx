@@ -173,20 +173,13 @@ const AggregationPage: React.FC = () => {
     return { ...w, currentBalance: balance };
   });
 
-  const assetWallets = walletBalances
-    .filter((w) => w.type !== "card")
-    .sort((a, b) => {
-      if (a.type !== b.type) return a.type === "bank" ? -1 : 1;
-      return a.name.localeCompare(b.name, "ja");
-    });
+  const assetWallets = walletBalances.filter((w) => w.type !== "card");
 
-  const cardWallets = walletBalances
-    .filter((w) => w.type === "card")
-    .sort((a, b) => a.name.localeCompare(b.name, "ja"));
+  const cardWallets = walletBalances.filter((w) => w.type === "card");
 
   const totalAssetBalance = assetWallets.reduce(
     (acc, curr) => acc + curr.currentBalance,
-    0
+    0,
   );
 
   const getCardPayments = () => {
@@ -234,7 +227,7 @@ const AggregationPage: React.FC = () => {
 
       // 引き落とし口座名を取得
       const withdrawalAccount = wallets.find(
-        (w) => w.id === card.withdrawalWalletId
+        (w) => w.id === card.withdrawalWalletId,
       );
 
       return {
@@ -293,7 +286,7 @@ const AggregationPage: React.FC = () => {
         : filteredTransactions;
 
     const sortedTxs = [...txList].sort(
-      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
     );
 
     const getTitle = () => {
@@ -345,15 +338,15 @@ const AggregationPage: React.FC = () => {
                           tx.type === "income"
                             ? "bg-green-100 text-green-800"
                             : tx.type === "expense"
-                            ? "bg-red-100 text-red-800"
-                            : "bg-yellow-100 text-yellow-800"
+                              ? "bg-red-100 text-red-800"
+                              : "bg-yellow-100 text-yellow-800"
                         }`}
                       >
                         {tx.type === "income"
                           ? "収入"
                           : tx.type === "expense"
-                          ? "支出"
-                          : "移動"}
+                            ? "支出"
+                            : "移動"}
                       </span>
                     </td>
                     <td className="px-2 py-4">
@@ -391,15 +384,15 @@ const AggregationPage: React.FC = () => {
                         tx.type === "expense"
                           ? "text-red-600"
                           : tx.type === "income"
-                          ? "text-green-600"
-                          : "text-gray-600"
+                            ? "text-green-600"
+                            : "text-gray-600"
                       }`}
                     >
                       {tx.type === "expense"
                         ? "-"
                         : tx.type === "income"
-                        ? "+"
-                        : ""}
+                          ? "+"
+                          : ""}
                       ¥{tx.amount.toLocaleString()}
                     </td>
                     <td className="px-2 py-4 text-center">
@@ -456,8 +449,8 @@ const AggregationPage: React.FC = () => {
       view === "expense"
         ? categories.filter((c) => c.type === "expense")
         : view === "income"
-        ? categories.filter((c) => c.type === "income")
-        : categories;
+          ? categories.filter((c) => c.type === "income")
+          : categories;
 
     return (
       <div className="sketch-border p-4 bg-gray-50 mb-8 space-y-4">
@@ -560,10 +553,10 @@ const AggregationPage: React.FC = () => {
           {tab === "balance"
             ? "残高"
             : tab === "wallet"
-            ? "財布"
-            : tab === "expense"
-            ? "支出"
-            : "収入"}
+              ? "財布"
+              : tab === "expense"
+                ? "支出"
+                : "収入"}
         </button>
       ))}
     </div>
@@ -762,8 +755,8 @@ const AggregationPage: React.FC = () => {
                                   1,
                                   getCategoryData(view as any).reduce(
                                     (a, b) => a + b.value,
-                                    0
-                                  )
+                                    0,
+                                  ),
                                 )) *
                               100
                             }%`,
