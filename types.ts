@@ -35,6 +35,7 @@ export interface Transaction {
   fromWalletId?: string; // used for expense and transfer
   toWalletId?: string; // used for income and transfer
   categoryId?: string;
+  creditPaymentDate?: string; // クレカの引き落とし日 (ISO format)
   description: string; // "内容"
   note: string; // "備考"
 }

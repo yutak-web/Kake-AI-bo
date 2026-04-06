@@ -8,6 +8,20 @@ const formatDateLocal = (date: Date) => {
   return `${year}-${month}-${day}`;
 };
 
+/** 取引日とクレカのclosingDay/paymentDayから引き落とし日を計算 */
+const calcCreditPaymentDate = (
+  transactionDateStr: string,
+  closingDay: number,
+  paymentDay: number,
+): string => {
+  const d = new Date(transactionDateStr);
+  let closingYear = d.getFullYear();
+  let closingMonth = d.getMonth();
+  if (d.getDate() > closingDay) closingMonth += 1;
+  const paymentDate = new Date(closingYear, closingMonth + 1, paymentDay);
+  return formatDateLocal(paymentDate);
+};
+
 interface TransactionModalProps {
   type: TransactionType;
   transaction?: Transaction | null;
@@ -32,6 +46,28 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
   const [toWalletId, setToWalletId] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [note, setNote] = useState("");
+  const [creditPaymentDate, setCreditPaymentDate] = useState("");
+
+  // 選択中の財布がクレカかどうか
+  const selectedWallet = wallets.find((w) => w.id === fromWalletId);
+  const isCard = selectedWallet?.type === "card";
+
+  // 支払日を自動計算するヘルパー
+  const updateCreditPaymentDate = (
+    walletId: string,
+    transactionDate: string,
+  ) => {
+    const wallet = wallets.find((w) => w.id === walletId);
+    if (wallet?.type === "card") {
+      const closingDay = wallet.closingDay || 31;
+      const paymentDay = wallet.paymentDay || 26;
+      setCreditPaymentDate(
+        calcCreditPaymentDate(transactionDate, closingDay, paymentDay),
+      );
+    } else {
+      setCreditPaymentDate("");
+    }
+  };
 
   useEffect(() => {
     if (transaction) {
@@ -42,8 +78,35 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
       setToWalletId(transaction.toWalletId || "");
       setCategoryId(transaction.categoryId || "");
       setNote(transaction.note || "");
+      if (transaction.creditPaymentDate) {
+        setCreditPaymentDate(transaction.creditPaymentDate);
+      } else if (transaction.fromWalletId) {
+        // 既存データで creditPaymentDate がない場合は自動計算
+        const w = wallets.find((w) => w.id === transaction.fromWalletId);
+        if (w?.type === "card") {
+          const closingDay = w.closingDay || 31;
+          const paymentDay = w.paymentDay || 26;
+          setCreditPaymentDate(
+            calcCreditPaymentDate(transaction.date, closingDay, paymentDay),
+          );
+        }
+      }
     }
-  }, [transaction]);
+  }, [transaction, wallets]);
+
+  // fromWalletId 変更時に支払日を再計算
+  const handleFromWalletChange = (walletId: string) => {
+    setFromWalletId(walletId);
+    updateCreditPaymentDate(walletId, date);
+  };
+
+  // 日付変更時も支払日を再計算（クレカ選択中の場合）
+  const handleDateChange = (newDate: string) => {
+    setDate(newDate);
+    if (isCard) {
+      updateCreditPaymentDate(fromWalletId, newDate);
+    }
+  };
 
   const handleSave = async () => {
     if (!amount || !modalType) return;
@@ -60,6 +123,9 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
     if (modalType === "transfer") payload.toWalletId = toWalletId;
     if (modalType === "income") payload.toWalletId = toWalletId || fromWalletId; // legacy sync
     if (categoryId) payload.categoryId = categoryId;
+    if (isCard && creditPaymentDate) {
+      payload.creditPaymentDate = creditPaymentDate;
+    }
 
     await onSave(payload);
   };
@@ -89,7 +155,7 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
             <input
               type="date"
               value={date}
-              onChange={(e) => setDate(e.target.value)}
+              onChange={(e) => handleDateChange(e.target.value)}
               className="w-full mt-1 border-2 border-gray-300 rounded px-3 py-2 focus:border-blue-500 outline-none"
             />
           </div>
@@ -127,7 +193,7 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
               </label>
               <select
                 value={fromWalletId}
-                onChange={(e) => setFromWalletId(e.target.value)}
+                onChange={(e) => handleFromWalletChange(e.target.value)}
                 className="w-full mt-1 border-2 border-gray-300 rounded px-3 py-2 focus:border-blue-500 outline-none"
               >
                 <option value="">財布を選択</option>
@@ -137,6 +203,20 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
                   </option>
                 ))}
               </select>
+            </div>
+          )}
+
+          {modalType !== "income" && isCard && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700">
+                支払日（引き落とし日）
+              </label>
+              <input
+                type="date"
+                value={creditPaymentDate}
+                onChange={(e) => setCreditPaymentDate(e.target.value)}
+                className="w-full mt-1 border-2 border-gray-300 rounded px-3 py-2 focus:border-blue-500 outline-none"
+              />
             </div>
           )}
 
