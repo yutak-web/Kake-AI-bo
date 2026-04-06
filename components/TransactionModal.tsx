@@ -65,7 +65,7 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
   };
 
   const filteredCategories = categories.filter(
-    (c) => c.type === (modalType === "transfer" ? "expense" : modalType)
+    (c) => c.type === (modalType === "transfer" ? "expense" : modalType),
   );
 
   return (
@@ -75,10 +75,10 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
           {transaction
             ? "取引を編集"
             : modalType === "expense"
-            ? "支出登録"
-            : modalType === "income"
-            ? "収入登録"
-            : "移動登録"}
+              ? "支出登録"
+              : modalType === "income"
+                ? "収入登録"
+                : "移動登録"}
         </h2>
 
         <div className="space-y-4">
@@ -96,19 +96,6 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
 
           <div>
             <label className="block text-sm font-medium text-gray-700">
-              内容
-            </label>
-            <input
-              type="text"
-              placeholder="例: スーパーでの買い物, 給料"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className="w-full mt-1 border-2 border-gray-300 rounded px-3 py-2 focus:border-blue-500 outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700">
               金額
             </label>
             <input
@@ -116,6 +103,19 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
               placeholder="金額を入力"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
+              className="w-full mt-1 border-2 border-gray-300 rounded px-3 py-2 focus:border-blue-500 outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700">
+              内容
+            </label>
+            <input
+              type="text"
+              placeholder="例: スーパーでの買い物, 給料"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
               className="w-full mt-1 border-2 border-gray-300 rounded px-3 py-2 focus:border-blue-500 outline-none"
             />
           </div>
