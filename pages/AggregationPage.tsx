@@ -212,7 +212,10 @@ const AggregationPage: React.FC = () => {
       transactions
         .filter((tx) => tx.fromWalletId === card.id)
         .forEach((tx) => {
-          const pDate = getPaymentDateForTransaction(tx.date);
+          // creditPaymentDate が設定されている場合はそれを使う
+          const pDate = tx.creditPaymentDate
+            ? new Date(tx.creditPaymentDate)
+            : getPaymentDateForTransaction(tx.date);
           const pKey = formatDateLocal(pDate);
           if (pKey === p1Key) p1Amount += tx.amount;
           if (pKey === p2Key) p2Amount += tx.amount;
