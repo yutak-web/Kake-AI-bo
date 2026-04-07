@@ -36,6 +36,8 @@ export interface Transaction {
   toWalletId?: string; // used for income and transfer
   categoryId?: string;
   creditPaymentDate?: string; // クレカの引き落とし日 (ISO format)
+  isReimbursement?: boolean; // 立替申請フラグ
+  isReimbursed?: boolean; // 立替済みフラグ
   description: string; // "内容"
   note: string; // "備考"
 }

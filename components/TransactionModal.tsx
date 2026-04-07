@@ -46,6 +46,8 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
   const [toWalletId, setToWalletId] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [note, setNote] = useState("");
+  const [isReimbursement, setIsReimbursement] = useState(false);
+  const [isReimbursed, setIsReimbursed] = useState(false);
   const [creditPaymentDate, setCreditPaymentDate] = useState("");
 
   // 選択中の財布がクレカかどうか
@@ -78,6 +80,8 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
       setToWalletId(transaction.toWalletId || "");
       setCategoryId(transaction.categoryId || "");
       setNote(transaction.note || "");
+      setIsReimbursement(transaction.isReimbursement || false);
+      setIsReimbursed(transaction.isReimbursed || false);
       if (transaction.creditPaymentDate) {
         setCreditPaymentDate(transaction.creditPaymentDate);
       } else if (transaction.fromWalletId) {
@@ -125,6 +129,10 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
     if (categoryId) payload.categoryId = categoryId;
     if (isCard && creditPaymentDate) {
       payload.creditPaymentDate = creditPaymentDate;
+    }
+    if (modalType === "expense") {
+      payload.isReimbursement = isReimbursement;
+      payload.isReimbursed = isReimbursement ? isReimbursed : false;
     }
 
     await onSave(payload);
@@ -257,6 +265,40 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
                   </option>
                 ))}
               </select>
+            </div>
+          )}
+
+          {modalType === "expense" && (
+            <div className="flex items-center space-x-4">
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="isReimbursement"
+                  checked={isReimbursement}
+                  onChange={(e) => {
+                    setIsReimbursement(e.target.checked);
+                    if (!e.target.checked) setIsReimbursed(false);
+                  }}
+                  className="w-4 h-4 text-blue-600 border-2 border-gray-300 rounded focus:ring-blue-500"
+                />
+                <label htmlFor="isReimbursement" className="text-sm font-medium text-gray-700 cursor-pointer">
+                  立替申請
+                </label>
+              </div>
+              {isReimbursement && (
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="isReimbursed"
+                    checked={isReimbursed}
+                    onChange={(e) => setIsReimbursed(e.target.checked)}
+                    className="w-4 h-4 text-green-600 border-2 border-gray-300 rounded focus:ring-green-500"
+                  />
+                  <label htmlFor="isReimbursed" className="text-sm font-medium text-gray-700 cursor-pointer">
+                    立替済み
+                  </label>
+                </div>
+              )}
             </div>
           )}
 
