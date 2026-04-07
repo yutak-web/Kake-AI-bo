@@ -85,6 +85,7 @@ const AggregationPage: React.FC = () => {
   const [endDate, setEndDate] = useState(lastDay);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>("");
   const [selectedWalletId, setSelectedWalletId] = useState<string>("");
+  const [reimbursementFilter, setReimbursementFilter] = useState<string>(""); // "": all, "yes": 立替のみ, "no": 立替以外
 
   const fetchData = async () => {
     const [w, t, c] = await Promise.all([
@@ -149,8 +150,12 @@ const AggregationPage: React.FC = () => {
         (view === "income" && tx.toWalletId === selectedWalletId);
 
       if (view === "expense" || view === "income") {
+        const reimbursementMatches =
+          !reimbursementFilter ||
+          (reimbursementFilter === "yes" && tx.isReimbursement) ||
+          (reimbursementFilter === "no" && !tx.isReimbursement);
         return (
-          tx.type === view && dateInRange && categoryMatches && walletMatches
+          tx.type === view && dateInRange && categoryMatches && walletMatches && reimbursementMatches
         );
       }
       return dateInRange && categoryMatches;
@@ -162,6 +167,7 @@ const AggregationPage: React.FC = () => {
     endDate,
     selectedCategoryId,
     selectedWalletId,
+    reimbursementFilter,
   ]);
 
   const walletBalances = wallets.map((w) => {
@@ -549,6 +555,23 @@ const AggregationPage: React.FC = () => {
                     {w.name}
                   </option>
                 ))}
+              </select>
+            </div>
+          )}
+
+          {view === "expense" && (
+            <div className="flex items-center space-x-2">
+              <label className="text-[10px] font-bold text-gray-400 min-w-[40px]">
+                立替
+              </label>
+              <select
+                value={reimbursementFilter}
+                onChange={(e) => setReimbursementFilter(e.target.value)}
+                className="flex-1 text-xs border border-gray-300 rounded px-2 py-1 outline-none focus:border-blue-500 bg-white"
+              >
+                <option value="">すべて</option>
+                <option value="yes">立替申請のみ</option>
+                <option value="no">立替以外</option>
               </select>
             </div>
           )}
