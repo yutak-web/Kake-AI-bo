@@ -7,8 +7,11 @@ import {
   deleteDoc,
   doc,
   updateDoc,
-  Timestamp,
+  onSnapshot,
+  QueryConstraint,
+  Unsubscribe,
 } from "firebase/firestore";
+import { onAuthStateChanged } from "firebase/auth";
 import { db } from "../firebase";
 import { Wallet, Category, Transaction } from "../types";
 
@@ -21,6 +24,44 @@ const getUserId = () => {
     throw new Error("User not authenticated");
   }
   return user.uid;
+};
+
+const subscribeUserCollection = <T>(
+  collectionName: string,
+  mapDoc: (id: string, data: Record<string, unknown>) => T,
+  onData: (items: T[]) => void,
+  constraints: QueryConstraint[] = [],
+  sortItems?: (items: T[]) => T[],
+): Unsubscribe => {
+  let unsubscribeSnapshot: Unsubscribe | null = null;
+
+  const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+    unsubscribeSnapshot?.();
+    unsubscribeSnapshot = null;
+
+    if (!user) {
+      onData([]);
+      return;
+    }
+
+    const q = query(
+      collection(db, collectionName),
+      where("userId", "==", user.uid),
+      ...constraints,
+    );
+
+    unsubscribeSnapshot = onSnapshot(q, (snapshot) => {
+      const items = snapshot.docs.map((doc) =>
+        mapDoc(doc.id, doc.data() as Record<string, unknown>),
+      );
+      onData(sortItems ? sortItems(items) : items);
+    });
+  });
+
+  return () => {
+    unsubscribeSnapshot?.();
+    unsubscribeAuth();
+  };
 };
 
 // Wallet Operations
@@ -45,6 +86,21 @@ export const getWallets = async (): Promise<Wallet[]> => {
     );
     return [];
   }
+};
+
+export const subscribeWallets = (onData: (wallets: Wallet[]) => void) => {
+  return subscribeUserCollection<Wallet>(
+    "wallets",
+    (id, data) => ({ id, ...data }) as Wallet,
+    onData,
+    [],
+    (wallets) =>
+      wallets.sort((a, b) => {
+        const orderA = a.order ?? Number.MAX_SAFE_INTEGER;
+        const orderB = b.order ?? Number.MAX_SAFE_INTEGER;
+        return orderA - orderB;
+      }),
+  );
 };
 
 export const addWallet = async (wallet: Omit<Wallet, "id" | "userId">) => {
@@ -103,6 +159,21 @@ export const getCategories = async (): Promise<Category[]> => {
   }
 };
 
+export const subscribeCategories = (onData: (categories: Category[]) => void) => {
+  return subscribeUserCollection<Category>(
+    "categories",
+    (id, data) => ({ id, ...data }) as Category,
+    onData,
+    [],
+    (categories) =>
+      categories.sort((a, b) => {
+        const orderA = a.order ?? Number.MAX_SAFE_INTEGER;
+        const orderB = b.order ?? Number.MAX_SAFE_INTEGER;
+        return orderA - orderB;
+      }),
+  );
+};
+
 export const addCategory = async (
   category: Omit<Category, "id" | "userId">,
 ) => {
@@ -158,11 +229,25 @@ export const getTransactions = async (): Promise<Transaction[]> => {
   }
 };
 
+export const subscribeTransactions = (
+  onData: (transactions: Transaction[]) => void,
+) => {
+  return subscribeUserCollection<Transaction>(
+    "transactions",
+    (id, data) => ({ id, ...data }) as Transaction,
+    onData,
+  );
+};
+
 export const addTransaction = async (
   tx: Omit<Transaction, "id" | "userId">,
 ) => {
   const uid = getUserId();
-  return addDoc(collection(db, "transactions"), { ...tx, userId: uid });
+  return addDoc(collection(db, "transactions"), {
+    ...tx,
+    userId: uid,
+    createdAt: tx.createdAt ?? new Date().toISOString(),
+  });
 };
 
 export const updateTransaction = async (

@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
 import {
-  getWallets,
-  getTransactions,
-  getCategories,
+  subscribeWallets,
+  subscribeTransactions,
+  subscribeCategories,
   deleteTransaction,
   updateTransaction,
 } from "../services/db";
@@ -31,6 +31,9 @@ type WalletChartPoint = {
   displayDate: string;
   balance: number;
 };
+
+const getTransactionCreatedAtTime = (tx: Transaction) =>
+  tx.createdAt ? new Date(tx.createdAt).getTime() : 0;
 
 const EditIcon = () => (
   <svg
@@ -98,24 +101,25 @@ const WalletDetailsPage: React.FC = () => {
   const [endDate, setEndDate] = useState(lastDay);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>("");
 
-  const fetchData = async () => {
-    const [w, t, c] = await Promise.all([
-      getWallets(),
-      getTransactions(),
-      getCategories(),
-    ]);
-    setAllWallets(w);
-    setWallet(w.find((x) => x.id === walletId) || null);
-    setTransactions(
-      t.filter(
-        (tx) => tx.fromWalletId === walletId || tx.toWalletId === walletId,
-      ),
-    );
-    setCategories(c);
-  };
-
   useEffect(() => {
-    fetchData();
+    const unsubscribeWallets = subscribeWallets((wallets) => {
+      setAllWallets(wallets);
+      setWallet(wallets.find((x) => x.id === walletId) || null);
+    });
+    const unsubscribeTransactions = subscribeTransactions((allTransactions) => {
+      setTransactions(
+        allTransactions.filter(
+          (tx) => tx.fromWalletId === walletId || tx.toWalletId === walletId,
+        ),
+      );
+    });
+    const unsubscribeCategories = subscribeCategories(setCategories);
+
+    return () => {
+      unsubscribeWallets();
+      unsubscribeTransactions();
+      unsubscribeCategories();
+    };
   }, [walletId]);
 
   const handleUpdateTx = async (payload: any) => {
@@ -123,7 +127,6 @@ const WalletDetailsPage: React.FC = () => {
     try {
       await updateTransaction(editingTx.id, payload);
       setEditingTx(null);
-      fetchData();
       alert("更新しました");
     } catch (e) {
       console.error(e);
@@ -135,7 +138,6 @@ const WalletDetailsPage: React.FC = () => {
     if (window.confirm("この履歴を削除しますか？")) {
       try {
         await deleteTransaction(id);
-        fetchData();
       } catch (e) {
         console.error(e);
         alert("削除に失敗しました");
@@ -174,9 +176,11 @@ const WalletDetailsPage: React.FC = () => {
   }, [transactions, startDate, endDate, selectedCategoryId]);
 
   const sortedFilteredTransactions = useMemo<Transaction[]>(() => {
-    return [...filteredTransactions].sort(
-      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
-    );
+    return [...filteredTransactions].sort((a, b) => {
+      const dateDiff = new Date(b.date).getTime() - new Date(a.date).getTime();
+      if (dateDiff !== 0) return dateDiff;
+      return getTransactionCreatedAtTime(b) - getTransactionCreatedAtTime(a);
+    });
   }, [filteredTransactions]);
 
   const transactionBalances = useMemo<Record<string, number>>(() => {
@@ -188,6 +192,9 @@ const WalletDetailsPage: React.FC = () => {
         const dateDiff =
           new Date(a.tx.date).getTime() - new Date(b.tx.date).getTime();
         if (dateDiff !== 0) return dateDiff;
+        const createdAtDiff =
+          getTransactionCreatedAtTime(a.tx) - getTransactionCreatedAtTime(b.tx);
+        if (createdAtDiff !== 0) return createdAtDiff;
         return a.index - b.index;
       });
 

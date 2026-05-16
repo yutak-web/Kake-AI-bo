@@ -1,5 +1,9 @@
 import React, { useState, useEffect } from "react";
-import { getWallets, getCategories, addTransaction } from "../services/db";
+import {
+  subscribeWallets,
+  subscribeCategories,
+  addTransaction,
+} from "../services/db";
 import { Wallet, Category, TransactionType } from "../types";
 import TransactionModal from "../components/TransactionModal";
 
@@ -9,12 +13,13 @@ const RegistrationPage: React.FC = () => {
   const [categories, setCategories] = useState<Category[]>([]);
 
   useEffect(() => {
-    const fetchData = async () => {
-      const [w, c] = await Promise.all([getWallets(), getCategories()]);
-      setWallets(w);
-      setCategories(c);
+    const unsubscribeWallets = subscribeWallets(setWallets);
+    const unsubscribeCategories = subscribeCategories(setCategories);
+
+    return () => {
+      unsubscribeWallets();
+      unsubscribeCategories();
     };
-    fetchData();
   }, []);
 
   const handleSave = async (payload: any) => {
