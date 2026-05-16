@@ -26,6 +26,12 @@ const formatDateLocal = (date: Date) => {
   return `${year}-${month}-${day}`;
 };
 
+type WalletChartPoint = {
+  date: string;
+  displayDate: string;
+  balance: number;
+};
+
 const EditIcon = () => (
   <svg
     xmlns="http://www.w3.org/2000/svg"
@@ -167,6 +173,34 @@ const WalletDetailsPage: React.FC = () => {
     });
   }, [transactions, startDate, endDate, selectedCategoryId]);
 
+  const sortedFilteredTransactions = useMemo<Transaction[]>(() => {
+    return [...filteredTransactions].sort(
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+    );
+  }, [filteredTransactions]);
+
+  const transactionBalances = useMemo<Record<string, number>>(() => {
+    if (!wallet) return {};
+
+    const sortedTransactions = transactions
+      .map((tx, index) => ({ tx, index }))
+      .sort((a, b) => {
+        const dateDiff =
+          new Date(a.tx.date).getTime() - new Date(b.tx.date).getTime();
+        if (dateDiff !== 0) return dateDiff;
+        return a.index - b.index;
+      });
+
+    let runningBalance = Number(wallet.initialBalance);
+
+    return sortedTransactions.reduce<Record<string, number>>((acc, { tx }) => {
+      if (tx.fromWalletId === wallet.id) runningBalance -= tx.amount;
+      if (tx.toWalletId === wallet.id) runningBalance += tx.amount;
+      acc[tx.id] = runningBalance;
+      return acc;
+    }, {});
+  }, [wallet, transactions]);
+
   const { chartData, currentBalance } = useMemo(() => {
     if (!wallet) return { chartData: [], currentBalance: 0 };
 
@@ -225,7 +259,7 @@ const WalletDetailsPage: React.FC = () => {
     });
 
     // Build chart data day by day
-    const data = [];
+    const data: WalletChartPoint[] = [];
     let runningBalance = balanceAtStart;
 
     // Iterate from start to end
@@ -457,115 +491,124 @@ const WalletDetailsPage: React.FC = () => {
                 <th className="px-2 py-2 text-right text-gray-500 font-medium">
                   金額
                 </th>
+                <th className="px-2 py-2 text-right text-gray-500 font-medium">
+                  取引後残高
+                </th>
                 <th className="px-2 py-2 text-center text-gray-500 font-medium w-16">
                   操作
                 </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {[...filteredTransactions]
-                .sort(
-                  (a, b) =>
-                    new Date(b.date).getTime() - new Date(a.date).getTime(),
-                )
-                .map((tx) => {
-                  const isOut = tx.fromWalletId === wallet.id;
-                  const cat = categories.find((c) => c.id === tx.categoryId);
-                  const otherWalletId = isOut ? tx.toWalletId : tx.fromWalletId;
-                  const otherWallet = allWallets.find(
-                    (w) => w.id === otherWalletId,
-                  );
-                  return (
-                    <tr
-                      key={tx.id}
-                      className="hover:bg-gray-50 transition-colors group"
-                    >
-                      <td className="px-2 py-4 whitespace-nowrap">
-                        <div className="text-gray-500 text-[10px]">
-                          {tx.date}
-                        </div>
-                        <span
-                          className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-bold mt-1 ${
-                            tx.type === "income"
-                              ? "bg-green-100 text-green-800"
-                              : tx.type === "expense"
-                                ? "bg-red-100 text-red-800"
-                                : "bg-yellow-100 text-yellow-800"
-                          }`}
-                        >
-                          {tx.type === "income"
-                            ? "収入"
+              {sortedFilteredTransactions.map((tx) => {
+                const isOut = tx.fromWalletId === wallet.id;
+                const cat = categories.find((c) => c.id === tx.categoryId);
+                const otherWalletId = isOut ? tx.toWalletId : tx.fromWalletId;
+                const otherWallet = allWallets.find(
+                  (w) => w.id === otherWalletId,
+                );
+                const balanceAfterTx = transactionBalances[tx.id];
+                const hasBalanceAfterTx = balanceAfterTx !== undefined;
+                return (
+                  <tr
+                    key={tx.id}
+                    className="hover:bg-gray-50 transition-colors group"
+                  >
+                    <td className="px-2 py-4 whitespace-nowrap">
+                      <div className="text-gray-500 text-[10px]">{tx.date}</div>
+                      <span
+                        className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-bold mt-1 ${
+                          tx.type === "income"
+                            ? "bg-green-100 text-green-800"
                             : tx.type === "expense"
-                              ? "支出"
-                              : "移動"}
-                        </span>
-                      </td>
-                      <td className="px-2 py-4">
-                        <div className="flex items-center space-x-1 mb-1">
-                          {tx.type !== "transfer" && cat?.color && (
-                            <div
-                              className="w-2 h-2 rounded-full flex-shrink-0"
-                              style={{ backgroundColor: cat.color }}
-                            />
-                          )}
-                          <div className="text-[10px] text-gray-400 font-bold uppercase truncate max-w-[120px]">
-                            {tx.type === "transfer"
-                              ? "資金移動"
-                              : cat?.name || "未設定"}
-                          </div>
-                        </div>
-                        <div className="font-medium text-gray-800 mb-1">
-                          {tx.description || "内容なし"}
-                        </div>
-                        <div className="text-[9px] text-gray-500 bg-gray-100 inline-block px-1 rounded">
-                          {tx.type === "transfer" ? (
-                            <span>
-                              {isOut
-                                ? `→ ${otherWallet?.name || "不明"}`
-                                : `← ${otherWallet?.name || "不明"}`}
-                            </span>
-                          ) : (
-                            <span>
-                              {isOut
-                                ? `支払財布: ${wallet.name}`
-                                : `入金財布: ${wallet.name}`}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td
-                        className={`px-2 py-4 text-right font-bold font-mono whitespace-nowrap ${
-                          isOut ? "text-red-600" : "text-green-600"
+                              ? "bg-red-100 text-red-800"
+                              : "bg-yellow-100 text-yellow-800"
                         }`}
                       >
-                        {isOut ? "-" : "+"}¥{tx.amount.toLocaleString()}
-                      </td>
-                      <td className="px-2 py-4 text-center">
-                        <div className="flex justify-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button
-                            onClick={() => setEditingTx(tx)}
-                            className="p-1 hover:bg-blue-100 rounded text-blue-600"
-                            title="編集"
-                          >
-                            <EditIcon />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteTx(tx.id)}
-                            className="p-1 hover:bg-red-100 rounded text-red-600"
-                            title="削除"
-                          >
-                            <TrashIcon />
-                          </button>
+                        {tx.type === "income"
+                          ? "収入"
+                          : tx.type === "expense"
+                            ? "支出"
+                            : "移動"}
+                      </span>
+                    </td>
+                    <td className="px-2 py-4">
+                      <div className="flex items-center space-x-1 mb-1">
+                        {tx.type !== "transfer" && cat?.color && (
+                          <div
+                            className="w-2 h-2 rounded-full flex-shrink-0"
+                            style={{ backgroundColor: cat.color }}
+                          />
+                        )}
+                        <div className="text-[10px] text-gray-400 font-bold uppercase truncate max-w-[120px]">
+                          {tx.type === "transfer"
+                            ? "資金移動"
+                            : cat?.name || "未設定"}
                         </div>
-                      </td>
-                    </tr>
-                  );
-                })}
+                      </div>
+                      <div className="font-medium text-gray-800 mb-1">
+                        {tx.description || "内容なし"}
+                      </div>
+                      <div className="text-[9px] text-gray-500 bg-gray-100 inline-block px-1 rounded">
+                        {tx.type === "transfer" ? (
+                          <span>
+                            {isOut
+                              ? `→ ${otherWallet?.name || "不明"}`
+                              : `← ${otherWallet?.name || "不明"}`}
+                          </span>
+                        ) : (
+                          <span>
+                            {isOut
+                              ? `支払財布: ${wallet.name}`
+                              : `入金財布: ${wallet.name}`}
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td
+                      className={`px-2 py-4 text-right font-bold font-mono whitespace-nowrap ${
+                        isOut ? "text-red-600" : "text-green-600"
+                      }`}
+                    >
+                      {isOut ? "-" : "+"}¥{tx.amount.toLocaleString()}
+                    </td>
+                    <td
+                      className={`px-2 py-4 text-right font-mono whitespace-nowrap ${
+                        hasBalanceAfterTx && balanceAfterTx < 0
+                          ? "text-red-600"
+                          : "text-gray-700"
+                      }`}
+                    >
+                      {hasBalanceAfterTx
+                        ? `¥${balanceAfterTx.toLocaleString()}`
+                        : "-"}
+                    </td>
+                    <td className="px-2 py-4 text-center">
+                      <div className="flex justify-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={() => setEditingTx(tx)}
+                          className="p-1 hover:bg-blue-100 rounded text-blue-600"
+                          title="編集"
+                        >
+                          <EditIcon />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteTx(tx.id)}
+                          className="p-1 hover:bg-red-100 rounded text-red-600"
+                          title="削除"
+                        >
+                          <TrashIcon />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
 
               {filteredTransactions.length === 0 && (
                 <tr>
                   <td
-                    colSpan={4}
+                    colSpan={5}
                     className="px-2 py-8 text-center text-gray-400 italic"
                   >
                     取引履歴がありません
