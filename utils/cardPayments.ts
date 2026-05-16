@@ -69,16 +69,12 @@ export const getUpcomingCardPaymentDates = (
   card: Wallet,
   referenceDate: Date = new Date(),
 ) => {
-  const today = new Date(referenceDate);
-  today.setHours(0, 0, 0, 0);
-
   const paymentDay = card.paymentDay || 26;
-
-  let current = new Date(today.getFullYear(), today.getMonth(), paymentDay);
-  if (current < today) {
-    current = new Date(today.getFullYear(), today.getMonth() + 1, paymentDay);
-  }
-
+  const current = new Date(
+    referenceDate.getFullYear(),
+    referenceDate.getMonth(),
+    paymentDay,
+  );
   const next = new Date(current.getFullYear(), current.getMonth() + 1, paymentDay);
 
   return { current, next };

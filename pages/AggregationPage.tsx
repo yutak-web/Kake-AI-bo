@@ -27,6 +27,11 @@ type AggView = "balance" | "wallet" | "expense" | "income";
 const getTransactionCreatedAtTime = (tx: Transaction) =>
   tx.createdAt ? new Date(tx.createdAt).getTime() : 0;
 
+const parseDateLocal = (dateStr: string) => {
+  const [year, month, day] = dateStr.split("-").map(Number);
+  return new Date(year, month - 1, day);
+};
+
 const EditIcon = () => (
   <svg
     xmlns="http://www.w3.org/2000/svg"
@@ -80,9 +85,11 @@ const AggregationPage: React.FC = () => {
   };
 
   const { firstDay, lastDay } = getInitialDates();
+  const todayStr = formatDateLocal(new Date());
 
   const [startDate, setStartDate] = useState(firstDay);
   const [endDate, setEndDate] = useState(lastDay);
+  const [selectedBalanceDate, setSelectedBalanceDate] = useState(todayStr);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>("");
   const [selectedWalletId, setSelectedWalletId] = useState<string>("");
   const [reimbursementFilter, setReimbursementFilter] = useState<string>(""); // "": all, "pending": 立替申請(未立替済み), "done": 立替済み, "no": 立替以外
@@ -166,7 +173,17 @@ const AggregationPage: React.FC = () => {
     reimbursementFilter,
   ]);
 
-  const walletBalances = wallets.map((w) => {
+  const balancePageWalletBalances = wallets.map((w) => {
+    let balance = Number(w.initialBalance);
+    transactions.forEach((tx) => {
+      if (tx.date > selectedBalanceDate) return;
+      if (tx.fromWalletId === w.id) balance -= tx.amount;
+      if (tx.toWalletId === w.id) balance += tx.amount;
+    });
+    return { ...w, currentBalance: balance };
+  });
+
+  const latestWalletBalances = wallets.map((w) => {
     let balance = Number(w.initialBalance);
     transactions.forEach((tx) => {
       if (tx.fromWalletId === w.id) balance -= tx.amount;
@@ -175,17 +192,28 @@ const AggregationPage: React.FC = () => {
     return { ...w, currentBalance: balance };
   });
 
-  const assetWallets = walletBalances.filter((w) => w.type !== "card");
+  const balancePageAssetWallets = balancePageWalletBalances.filter(
+    (w) => w.type !== "card",
+  );
 
-  const cardWallets = walletBalances.filter((w) => w.type === "card");
+  const latestAssetWallets = latestWalletBalances.filter((w) => w.type !== "card");
 
-  const totalAssetBalance = assetWallets.reduce(
+  const balancePageCardWallets = balancePageWalletBalances.filter(
+    (w) => w.type === "card",
+  );
+
+  const latestCardWallets = latestWalletBalances.filter((w) => w.type === "card");
+
+  const totalAssetBalance = balancePageAssetWallets.reduce(
     (acc, curr) => acc + curr.currentBalance,
     0,
   );
 
-  const getCardPayments = () => {
-    return cardWallets.map((card) => {
+  const getCardPayments = (
+    cards: typeof latestCardWallets,
+    referenceDate: Date,
+  ) => {
+    return cards.map((card) => {
       const paymentDay = card.paymentDay || 26;
       // 引き落とし口座名を取得
       const withdrawalAccount = wallets.find(
@@ -198,12 +226,20 @@ const AggregationPage: React.FC = () => {
         color: card.color,
         paymentDay,
         withdrawalAccountName: withdrawalAccount?.name || "未設定",
-        payments: getUpcomingCardPayments(card, transactions),
+        payments: getUpcomingCardPayments(
+          card,
+          transactions,
+          referenceDate,
+        ),
       };
     });
   };
 
-  const cardPayments = getCardPayments();
+  const balancePageCardPayments = getCardPayments(
+    balancePageCardWallets,
+    parseDateLocal(selectedBalanceDate),
+  );
+  const walletPageCardPayments = getCardPayments(latestCardWallets, new Date());
 
   const getCategoryData = (type: "expense" | "income") => {
     const data: Record<string, { value: number; color: string }> = {};
@@ -579,16 +615,37 @@ const AggregationPage: React.FC = () => {
       {view === "balance" && (
         <div className="space-y-6">
           <div className="sketch-border p-6 bg-white shadow-sm">
-            <div className="flex justify-between items-center border-b pb-4">
-              <span className="text-xl text-gray-500 font-medium">
-                総資産残高
+            <div className="flex flex-col gap-3 border-b pb-4 md:flex-row md:items-end md:justify-between">
+              <div>
+                <span className="text-xl text-gray-500 font-medium">
+                  総資産残高
+                </span>
+                <p className="text-[10px] mt-1 text-gray-400 uppercase">
+                  指定日終了時点
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-[10px] font-bold text-gray-400 uppercase whitespace-nowrap">
+                  基準日
+                </label>
+                <input
+                  type="date"
+                  value={selectedBalanceDate}
+                  onChange={(e) => setSelectedBalanceDate(e.target.value)}
+                  className="text-xs border border-gray-300 rounded px-2 py-1 outline-none focus:border-blue-500"
+                />
+              </div>
+            </div>
+            <div className="flex justify-between items-center pt-4">
+              <span className="text-sm text-gray-500 font-medium">
+                {selectedBalanceDate}
               </span>
               <span className="text-3xl font-bold text-green-700">
                 ¥{totalAssetBalance.toLocaleString()}
               </span>
             </div>
             <div className="space-y-3 pt-4">
-              {assetWallets.map((w) => (
+              {balancePageAssetWallets.map((w) => (
                 <div
                   key={w.id}
                   className="flex justify-between items-center group"
@@ -625,7 +682,7 @@ const AggregationPage: React.FC = () => {
               <span className="mr-2">💳</span> クレジットカード支払い予定
             </h3>
             <div className="space-y-6">
-              {cardPayments.map((card) => (
+              {balancePageCardPayments.map((card) => (
                 <div
                   key={card.id}
                   className="bg-gray-50 rounded-lg p-4 border border-gray-100"
@@ -672,7 +729,7 @@ const AggregationPage: React.FC = () => {
                   </div>
                 </div>
               ))}
-              {cardPayments.length === 0 && (
+              {balancePageCardPayments.length === 0 && (
                 <p className="text-gray-400 text-sm italic text-center py-4">
                   クレジットカードが登録されていません
                 </p>
@@ -795,7 +852,7 @@ const AggregationPage: React.FC = () => {
               資産 (口座・現金など)
             </h3>
             <div className="grid grid-cols-2 gap-4">
-              {assetWallets.map((w) => (
+              {latestAssetWallets.map((w) => (
                 <div
                   key={w.id}
                   onClick={() => navigate(`/wallet/${w.id}`)}
@@ -812,7 +869,7 @@ const AggregationPage: React.FC = () => {
                   </p>
                 </div>
               ))}
-              {assetWallets.length === 0 && (
+              {latestAssetWallets.length === 0 && (
                 <p className="col-span-2 text-gray-400 text-sm text-center py-4">
                   資産口座がありません
                 </p>
@@ -824,8 +881,10 @@ const AggregationPage: React.FC = () => {
               クレジットカード
             </h3>
             <div className="grid grid-cols-2 gap-4">
-              {cardWallets.map((w) => {
-                const paymentInfo = cardPayments.find((card) => card.id === w.id);
+              {latestCardWallets.map((w) => {
+                const paymentInfo = walletPageCardPayments.find(
+                  (card) => card.id === w.id,
+                );
                 const currentPayment = paymentInfo?.payments[0];
                 const nextPayment = paymentInfo?.payments[1];
 
@@ -858,7 +917,7 @@ const AggregationPage: React.FC = () => {
                   </div>
                 );
               })}
-              {cardWallets.length === 0 && (
+              {latestCardWallets.length === 0 && (
                 <p className="col-span-2 text-gray-400 text-sm text-center py-4">
                   クレジットカードがありません
                 </p>
