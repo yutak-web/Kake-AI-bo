@@ -13,6 +13,7 @@ export interface Wallet {
   paymentDay?: number;
   initialPaymentAmount?: number;
   withdrawalWalletId?: string; // 引き落とし口座のID
+  actualPaymentDates?: Record<string, string>; // { "2026-05": "2026-05-27" }
 }
 
 export interface Category {
@@ -24,7 +25,7 @@ export interface Category {
   color?: string;
 }
 
-export type TransactionType = "income" | "expense" | "transfer";
+export type TransactionType = "income" | "expense" | "transfer" | "withdrawal";
 
 export interface Transaction {
   id: string;
@@ -36,7 +37,10 @@ export interface Transaction {
   fromWalletId?: string; // used for expense and transfer
   toWalletId?: string; // used for income and transfer
   categoryId?: string;
-  creditPaymentDate?: string; // クレカの引き落とし日 (ISO format)
+  paymentMonth?: string; // クレカ利用分の支払月 (YYYY-MM)
+  creditPaymentDate?: string; // legacy: クレカの引き落とし日 (ISO format)
+  actualPaymentDate?: string; // 実際の引落日 (ISO format)
+  isAutoCreated?: boolean;
   isReimbursement?: boolean; // 立替申請フラグ
   isReimbursed?: boolean; // 立替済みフラグ
   description: string; // "内容"

@@ -6,6 +6,7 @@ import {
   subscribeCategories,
   deleteTransaction,
   updateTransaction,
+  updateWallet,
 } from "../services/db";
 import { Wallet, Transaction, Category } from "../types";
 import {
@@ -18,13 +19,17 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import TransactionModal from "../components/TransactionModal";
-
-const formatDateLocal = (date: Date) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-};
+import {
+  formatDateLocal,
+  getActualPaymentDateForMonth,
+  getCardPaymentMonth,
+  formatMonthKey,
+  formatMonthLabel,
+  getCardPaymentAmountForMonth,
+  getCardPaymentDate,
+  getScheduledPaymentDateForMonth,
+  getUpcomingCardPaymentDates,
+} from "../utils/cardPayments";
 
 type WalletChartPoint = {
   date: string;
@@ -96,10 +101,14 @@ const WalletDetailsPage: React.FC = () => {
   };
 
   const { firstDay, lastDay } = getInitialDates();
+  const currentMonth = formatMonthKey(new Date());
 
   const [startDate, setStartDate] = useState(firstDay);
   const [endDate, setEndDate] = useState(lastDay);
+  const [selectedPaymentMonth, setSelectedPaymentMonth] =
+    useState(currentMonth);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>("");
+  const [actualPaymentDateInput, setActualPaymentDateInput] = useState("");
 
   useEffect(() => {
     const unsubscribeWallets = subscribeWallets((wallets) => {
@@ -164,16 +173,54 @@ const WalletDetailsPage: React.FC = () => {
     setEndDate("");
   };
 
+  useEffect(() => {
+    if (!wallet || wallet.type !== "card") return;
+    setActualPaymentDateInput(
+      getActualPaymentDateForMonth(wallet, selectedPaymentMonth),
+    );
+  }, [wallet, selectedPaymentMonth]);
+
+  const handleSaveActualPaymentDate = async () => {
+    if (!wallet || wallet.type !== "card" || !actualPaymentDateInput) return;
+    try {
+      await updateWallet(wallet.id, {
+        actualPaymentDates: {
+          ...(wallet.actualPaymentDates || {}),
+          [selectedPaymentMonth]: actualPaymentDateInput,
+        },
+      });
+      alert("実引落日を更新しました");
+    } catch (e) {
+      console.error(e);
+      alert("実引落日の更新に失敗しました");
+    }
+  };
+
   const filteredTransactions = useMemo(() => {
     return transactions.filter((tx) => {
+      const categoryMatches =
+        !selectedCategoryId || tx.categoryId === selectedCategoryId;
+      if (!categoryMatches) return false;
+
+      if (wallet?.type === "card") {
+        if (tx.fromWalletId !== wallet.id) return false;
+        const paymentMonth = getCardPaymentMonth(wallet, tx);
+        return paymentMonth === selectedPaymentMonth;
+      }
+
       const dateInRange =
         (!startDate || tx.date >= startDate) &&
         (!endDate || tx.date <= endDate);
-      const categoryMatches =
-        !selectedCategoryId || tx.categoryId === selectedCategoryId;
-      return dateInRange && categoryMatches;
+      return dateInRange;
     });
-  }, [transactions, startDate, endDate, selectedCategoryId]);
+  }, [
+    transactions,
+    startDate,
+    endDate,
+    selectedCategoryId,
+    wallet,
+    selectedPaymentMonth,
+  ]);
 
   const sortedFilteredTransactions = useMemo<Transaction[]>(() => {
     return [...filteredTransactions].sort((a, b) => {
@@ -183,8 +230,30 @@ const WalletDetailsPage: React.FC = () => {
     });
   }, [filteredTransactions]);
 
-  const transactionBalances = useMemo<Record<string, number>>(() => {
+  const transactionMetrics = useMemo<Record<string, number>>(() => {
     if (!wallet) return {};
+
+    if (wallet.type === "card") {
+      const sortedTransactions = filteredTransactions
+        .map((tx, index) => ({ tx, index }))
+        .sort((a, b) => {
+          const dateDiff =
+            new Date(a.tx.date).getTime() - new Date(b.tx.date).getTime();
+          if (dateDiff !== 0) return dateDiff;
+          const createdAtDiff =
+            getTransactionCreatedAtTime(a.tx) - getTransactionCreatedAtTime(b.tx);
+          if (createdAtDiff !== 0) return createdAtDiff;
+          return a.index - b.index;
+        });
+
+      let runningUsage = 0;
+
+      return sortedTransactions.reduce<Record<string, number>>((acc, { tx }) => {
+        runningUsage += tx.amount;
+        acc[tx.id] = runningUsage;
+        return acc;
+      }, {});
+    }
 
     const sortedTransactions = transactions
       .map((tx, index) => ({ tx, index }))
@@ -206,10 +275,63 @@ const WalletDetailsPage: React.FC = () => {
       acc[tx.id] = runningBalance;
       return acc;
     }, {});
-  }, [wallet, transactions]);
+  }, [wallet, transactions, filteredTransactions]);
 
-  const { chartData, currentBalance } = useMemo(() => {
-    if (!wallet) return { chartData: [], currentBalance: 0 };
+  const { chartData, currentAmount } = useMemo(() => {
+    if (!wallet) return { chartData: [], currentAmount: 0 };
+
+    if (wallet.type === "card") {
+      const paymentAmount = getCardPaymentAmountForMonth(
+        wallet,
+        transactions,
+        selectedPaymentMonth,
+      );
+
+      if (filteredTransactions.length === 0) {
+        return { chartData: [], currentAmount: paymentAmount };
+      }
+
+      const sortedTransactions = [...filteredTransactions].sort((a, b) => {
+        const dateDiff =
+          new Date(a.date).getTime() - new Date(b.date).getTime();
+        if (dateDiff !== 0) return dateDiff;
+        return getTransactionCreatedAtTime(a) - getTransactionCreatedAtTime(b);
+      });
+
+      const start = new Date(sortedTransactions[0].date);
+      const end = new Date(sortedTransactions[sortedTransactions.length - 1].date);
+      const data: WalletChartPoint[] = [];
+      let runningUsage = 0;
+      const curr = new Date(start);
+      let loops = 0;
+
+      while (curr <= end && loops < 3660) {
+        const currentDateStr = formatDateLocal(curr);
+
+        sortedTransactions.forEach((tx) => {
+          if (tx.date === currentDateStr) {
+            runningUsage += tx.amount;
+          }
+        });
+
+        const daysDiff =
+          (end.getTime() - start.getTime()) / (1000 * 3600 * 24);
+
+        data.push({
+          date: currentDateStr,
+          displayDate:
+            daysDiff > 180
+              ? `${curr.getMonth() + 1}月`
+              : `${curr.getMonth() + 1}/${curr.getDate()}`,
+          balance: runningUsage,
+        });
+
+        curr.setDate(curr.getDate() + 1);
+        loops++;
+      }
+
+      return { chartData: data, currentAmount: paymentAmount };
+    }
 
     // Calculate total current balance (regardless of filter)
     const totalBalance = transactions.reduce((acc, tx) => {
@@ -309,8 +431,8 @@ const WalletDetailsPage: React.FC = () => {
       loops++;
     }
 
-    return { chartData: data, currentBalance: totalBalance };
-  }, [wallet, transactions, startDate, endDate]);
+    return { chartData: data, currentAmount: totalBalance };
+  }, [wallet, transactions, startDate, endDate, filteredTransactions]);
 
   if (!wallet)
     return (
@@ -329,6 +451,24 @@ const WalletDetailsPage: React.FC = () => {
     if (chartData.length <= 180) return 29;
     return 60;
   };
+
+  const isCardWallet = wallet.type === "card";
+  const cardPaymentDates = isCardWallet
+    ? getUpcomingCardPaymentDates(wallet)
+    : null;
+  const summaryLabel = isCardWallet
+    ? `${formatMonthLabel(selectedPaymentMonth)} の支払予定額`
+    : "現在の残高";
+  const chartTitle = isCardWallet ? "使用額推移" : "残高推移";
+  const chartMetricLabel = isCardWallet ? "使用額" : "残高";
+  const chartCaption = isCardWallet
+    ? "Daily Cumulative Usage"
+    : "Daily Final Balance";
+  const metricColumnLabel = isCardWallet ? "累計使用額" : "取引後残高";
+  const scheduledPaymentDate =
+    isCardWallet && wallet.type === "card"
+      ? getScheduledPaymentDateForMonth(wallet, selectedPaymentMonth)
+      : "";
 
   return (
     <div className="space-y-8 animate-in fade-in duration-300 pb-10">
@@ -349,7 +489,7 @@ const WalletDetailsPage: React.FC = () => {
       <div className="text-center">
         <h2 className="text-3xl font-bold tracking-tight">{wallet.name}</h2>
         <p className="text-xl mt-2 text-gray-600 font-mono">
-          現在の残高: ¥{currentBalance.toLocaleString()}
+          {summaryLabel}: ¥{currentAmount.toLocaleString()}
         </p>
       </div>
 
@@ -359,51 +499,81 @@ const WalletDetailsPage: React.FC = () => {
         <div className="sketch-border p-4 bg-gray-50 mb-4 space-y-4">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">
-              絞り込み
+              {isCardWallet ? "支払い月で絞り込み" : "絞り込み"}
             </span>
             <div className="flex space-x-2">
               <button
-                onClick={setLastMonth}
+                onClick={
+                  isCardWallet
+                    ? () =>
+                        setSelectedPaymentMonth(
+                          formatMonthKey(cardPaymentDates?.current || new Date()),
+                        )
+                    : setLastMonth
+                }
                 className="text-[10px] bg-white border border-gray-300 px-2 py-1 rounded hover:bg-gray-100 transition"
               >
-                先月
+                {isCardWallet ? "今月支払い" : "先月"}
               </button>
               <button
-                onClick={setThisMonth}
+                onClick={
+                  isCardWallet
+                    ? () =>
+                        setSelectedPaymentMonth(
+                          formatMonthKey(cardPaymentDates?.next || new Date()),
+                        )
+                    : setThisMonth
+                }
                 className="text-[10px] bg-white border border-gray-300 px-2 py-1 rounded hover:bg-gray-100 transition"
               >
-                今月
+                {isCardWallet ? "来月支払い" : "今月"}
               </button>
-              <button
-                onClick={setAllTime}
-                className="text-[10px] bg-white border border-gray-300 px-2 py-1 rounded hover:bg-gray-100 transition"
-              >
-                全期間
-              </button>
+              {!isCardWallet && (
+                <button
+                  onClick={setAllTime}
+                  className="text-[10px] bg-white border border-gray-300 px-2 py-1 rounded hover:bg-gray-100 transition"
+                >
+                  全期間
+                </button>
+              )}
             </div>
           </div>
 
           <div className="space-y-3">
-            <div className="flex items-center space-x-2">
-              <label className="text-[10px] font-bold text-gray-400 min-w-[40px]">
-                期間
-              </label>
-              <div className="flex flex-1 items-center space-x-1">
+            {isCardWallet ? (
+              <div className="flex items-center space-x-2">
+                <label className="text-[10px] font-bold text-gray-400 min-w-[40px]">
+                  支払い月
+                </label>
                 <input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="flex-1 text-xs border border-gray-300 rounded px-2 py-1 outline-none focus:border-blue-500"
-                />
-                <span className="text-gray-400 text-xs">〜</span>
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
+                  type="month"
+                  value={selectedPaymentMonth}
+                  onChange={(e) => setSelectedPaymentMonth(e.target.value)}
                   className="flex-1 text-xs border border-gray-300 rounded px-2 py-1 outline-none focus:border-blue-500"
                 />
               </div>
-            </div>
+            ) : (
+              <div className="flex items-center space-x-2">
+                <label className="text-[10px] font-bold text-gray-400 min-w-[40px]">
+                  期間
+                </label>
+                <div className="flex flex-1 items-center space-x-1">
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="flex-1 text-xs border border-gray-300 rounded px-2 py-1 outline-none focus:border-blue-500"
+                  />
+                  <span className="text-gray-400 text-xs">〜</span>
+                  <input
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="flex-1 text-xs border border-gray-300 rounded px-2 py-1 outline-none focus:border-blue-500"
+                  />
+                </div>
+              </div>
+            )}
 
             <div className="flex items-center space-x-2">
               <label className="text-[10px] font-bold text-gray-400 min-w-[40px]">
@@ -422,14 +592,42 @@ const WalletDetailsPage: React.FC = () => {
                 ))}
               </select>
             </div>
+
+            {isCardWallet && (
+              <div className="flex items-center space-x-2">
+                <label className="text-[10px] font-bold text-gray-400 min-w-[40px]">
+                  実引落日
+                </label>
+                <div className="flex flex-1 items-center space-x-2">
+                  <input
+                    type="date"
+                    value={actualPaymentDateInput}
+                    onChange={(e) => setActualPaymentDateInput(e.target.value)}
+                    className="flex-1 text-xs border border-gray-300 rounded px-2 py-1 outline-none focus:border-blue-500"
+                  />
+                  <button
+                    onClick={handleSaveActualPaymentDate}
+                    className="text-[10px] bg-white border border-gray-300 px-2 py-1 rounded hover:bg-gray-100 transition whitespace-nowrap"
+                  >
+                    更新
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {isCardWallet && (
+              <div className="text-[10px] text-gray-400">
+                予定日: {scheduledPaymentDate}
+              </div>
+            )}
           </div>
         </div>
 
         <div className="h-80 sketch-border p-4 bg-white shadow-sm">
           <h4 className="text-sm font-bold text-gray-400 mb-4 flex justify-between items-center">
-            <span>残高推移</span>
+            <span>{chartTitle}</span>
             <span className="text-[10px] bg-gray-100 px-2 py-0.5 rounded text-gray-500 uppercase">
-              Daily Final Balance
+              {chartCaption}
             </span>
           </h4>
           <div className="h-[230px]">
@@ -456,7 +654,7 @@ const WalletDetailsPage: React.FC = () => {
                   }}
                   formatter={(value: number) => [
                     `¥${value.toLocaleString()}`,
-                    "残高",
+                    chartMetricLabel,
                   ]}
                   labelFormatter={(label, payload) => {
                     const item = payload[0]?.payload;
@@ -499,7 +697,7 @@ const WalletDetailsPage: React.FC = () => {
                   金額
                 </th>
                 <th className="px-2 py-2 text-right text-gray-500 font-medium">
-                  取引後残高
+                  {metricColumnLabel}
                 </th>
                 <th className="px-2 py-2 text-center text-gray-500 font-medium w-16">
                   操作
@@ -514,8 +712,11 @@ const WalletDetailsPage: React.FC = () => {
                 const otherWallet = allWallets.find(
                   (w) => w.id === otherWalletId,
                 );
-                const balanceAfterTx = transactionBalances[tx.id];
-                const hasBalanceAfterTx = balanceAfterTx !== undefined;
+                const paymentDate = isCardWallet
+                  ? getCardPaymentDate(wallet, tx)
+                  : "";
+                const metricValue = transactionMetrics[tx.id];
+                const hasMetricValue = metricValue !== undefined;
                 return (
                   <tr
                     key={tx.id}
@@ -529,14 +730,18 @@ const WalletDetailsPage: React.FC = () => {
                             ? "bg-green-100 text-green-800"
                             : tx.type === "expense"
                               ? "bg-red-100 text-red-800"
-                              : "bg-yellow-100 text-yellow-800"
+                              : tx.type === "transfer"
+                                ? "bg-yellow-100 text-yellow-800"
+                                : "bg-blue-100 text-blue-800"
                         }`}
                       >
                         {tx.type === "income"
                           ? "収入"
                           : tx.type === "expense"
                             ? "支出"
-                            : "移動"}
+                            : tx.type === "transfer"
+                              ? "移動"
+                              : "引落"}
                       </span>
                     </td>
                     <td className="px-2 py-4">
@@ -550,6 +755,8 @@ const WalletDetailsPage: React.FC = () => {
                         <div className="text-[10px] text-gray-400 font-bold uppercase truncate max-w-[120px]">
                           {tx.type === "transfer"
                             ? "資金移動"
+                            : tx.type === "withdrawal"
+                              ? "口座引落"
                             : cat?.name || "未設定"}
                         </div>
                       </div>
@@ -557,7 +764,17 @@ const WalletDetailsPage: React.FC = () => {
                         {tx.description || "内容なし"}
                       </div>
                       <div className="text-[9px] text-gray-500 bg-gray-100 inline-block px-1 rounded">
-                        {tx.type === "transfer" ? (
+                        {isCardWallet && tx.type === "transfer" ? (
+                          <span>
+                            → {otherWallet?.name || "不明"} / 支払日: {paymentDate}
+                          </span>
+                        ) : isCardWallet ? (
+                          <span>支払日: {paymentDate}</span>
+                        ) : tx.type === "withdrawal" ? (
+                          <span>
+                            引落先: {otherWallet?.name || "不明"}
+                          </span>
+                        ) : tx.type === "transfer" ? (
                           <span>
                             {isOut
                               ? `→ ${otherWallet?.name || "不明"}`
@@ -581,24 +798,26 @@ const WalletDetailsPage: React.FC = () => {
                     </td>
                     <td
                       className={`px-2 py-4 text-right font-mono whitespace-nowrap ${
-                        hasBalanceAfterTx && balanceAfterTx < 0
+                        hasMetricValue && !isCardWallet && metricValue < 0
                           ? "text-red-600"
                           : "text-gray-700"
                       }`}
                     >
-                      {hasBalanceAfterTx
-                        ? `¥${balanceAfterTx.toLocaleString()}`
+                      {hasMetricValue
+                        ? `¥${metricValue.toLocaleString()}`
                         : "-"}
                     </td>
                     <td className="px-2 py-4 text-center">
                       <div className="flex justify-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button
-                          onClick={() => setEditingTx(tx)}
-                          className="p-1 hover:bg-blue-100 rounded text-blue-600"
-                          title="編集"
-                        >
-                          <EditIcon />
-                        </button>
+                        {tx.type !== "withdrawal" && (
+                          <button
+                            onClick={() => setEditingTx(tx)}
+                            className="p-1 hover:bg-blue-100 rounded text-blue-600"
+                            title="編集"
+                          >
+                            <EditIcon />
+                          </button>
+                        )}
                         <button
                           onClick={() => handleDeleteTx(tx.id)}
                           className="p-1 hover:bg-red-100 rounded text-red-600"
@@ -627,7 +846,7 @@ const WalletDetailsPage: React.FC = () => {
         </div>
       </div>
 
-      {editingTx && (
+      {editingTx && editingTx.type !== "withdrawal" && (
         <TransactionModal
           type={editingTx.type}
           transaction={editingTx}

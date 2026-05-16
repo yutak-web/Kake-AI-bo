@@ -1,26 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { Transaction, TransactionType, Wallet, Category } from "../types";
-
-const formatDateLocal = (date: Date) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-};
-
-/** 取引日とクレカのclosingDay/paymentDayから引き落とし日を計算 */
-const calcCreditPaymentDate = (
-  transactionDateStr: string,
-  closingDay: number,
-  paymentDay: number,
-): string => {
-  const d = new Date(transactionDateStr);
-  let closingYear = d.getFullYear();
-  let closingMonth = d.getMonth();
-  if (d.getDate() > closingDay) closingMonth += 1;
-  const paymentDate = new Date(closingYear, closingMonth + 1, paymentDay);
-  return formatDateLocal(paymentDate);
-};
+import {
+  formatDateLocal,
+  formatMonthKey,
+  getCardPaymentMonth,
+} from "../utils/cardPayments";
 
 interface TransactionModalProps {
   type: TransactionType;
@@ -48,26 +32,33 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
   const [note, setNote] = useState("");
   const [isReimbursement, setIsReimbursement] = useState(false);
   const [isReimbursed, setIsReimbursed] = useState(false);
-  const [creditPaymentDate, setCreditPaymentDate] = useState("");
+  const [paymentMonth, setPaymentMonth] = useState(formatMonthKey(new Date()));
 
   // 選択中の財布がクレカかどうか
   const selectedWallet = wallets.find((w) => w.id === fromWalletId);
   const isCard = selectedWallet?.type === "card";
 
-  // 支払日を自動計算するヘルパー
-  const updateCreditPaymentDate = (
+  // 支払月を自動計算するヘルパー
+  const updatePaymentMonth = (
     walletId: string,
     transactionDate: string,
   ) => {
     const wallet = wallets.find((w) => w.id === walletId);
     if (wallet?.type === "card") {
-      const closingDay = wallet.closingDay || 31;
-      const paymentDay = wallet.paymentDay || 26;
-      setCreditPaymentDate(
-        calcCreditPaymentDate(transactionDate, closingDay, paymentDay),
+      setPaymentMonth(
+        getCardPaymentMonth(wallet, {
+          id: "",
+          userId: "",
+          date: transactionDate,
+          amount: 0,
+          type: modalType,
+          description: "",
+          note: "",
+          fromWalletId: walletId,
+        } as Transaction),
       );
     } else {
-      setCreditPaymentDate("");
+      setPaymentMonth(formatMonthKey(new Date(transactionDate)));
     }
   };
 
@@ -82,33 +73,28 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
       setNote(transaction.note || "");
       setIsReimbursement(transaction.isReimbursement || false);
       setIsReimbursed(transaction.isReimbursed || false);
-      if (transaction.creditPaymentDate) {
-        setCreditPaymentDate(transaction.creditPaymentDate);
-      } else if (transaction.fromWalletId) {
-        // 既存データで creditPaymentDate がない場合は自動計算
-        const w = wallets.find((w) => w.id === transaction.fromWalletId);
+      if (transaction.fromWalletId) {
+        const w = wallets.find((wallet) => wallet.id === transaction.fromWalletId);
         if (w?.type === "card") {
-          const closingDay = w.closingDay || 31;
-          const paymentDay = w.paymentDay || 26;
-          setCreditPaymentDate(
-            calcCreditPaymentDate(transaction.date, closingDay, paymentDay),
-          );
+          setPaymentMonth(getCardPaymentMonth(w, transaction));
+        } else {
+          setPaymentMonth(formatMonthKey(new Date(transaction.date)));
         }
       }
     }
   }, [transaction, wallets]);
 
-  // fromWalletId 変更時に支払日を再計算
+  // fromWalletId 変更時に支払月を再計算
   const handleFromWalletChange = (walletId: string) => {
     setFromWalletId(walletId);
-    updateCreditPaymentDate(walletId, date);
+    updatePaymentMonth(walletId, date);
   };
 
-  // 日付変更時も支払日を再計算（クレカ選択中の場合）
+  // 日付変更時も支払月を再計算（クレカ選択中の場合）
   const handleDateChange = (newDate: string) => {
     setDate(newDate);
     if (isCard) {
-      updateCreditPaymentDate(fromWalletId, newDate);
+      updatePaymentMonth(fromWalletId, newDate);
     }
   };
 
@@ -127,8 +113,8 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
     if (modalType === "transfer") payload.toWalletId = toWalletId;
     if (modalType === "income") payload.toWalletId = toWalletId || fromWalletId; // legacy sync
     if (categoryId) payload.categoryId = categoryId;
-    if (isCard && creditPaymentDate) {
-      payload.creditPaymentDate = creditPaymentDate;
+    if (isCard && paymentMonth) {
+      payload.paymentMonth = paymentMonth;
     }
     if (modalType === "expense") {
       payload.isReimbursement = isReimbursement;
@@ -139,7 +125,11 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
   };
 
   const filteredCategories = categories.filter(
-    (c) => c.type === (modalType === "transfer" ? "expense" : modalType),
+    (c) =>
+      c.type ===
+      (modalType === "transfer" || modalType === "withdrawal"
+        ? "expense"
+        : modalType),
   );
 
   return (
@@ -152,7 +142,9 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
               ? "支出登録"
               : modalType === "income"
                 ? "収入登録"
-                : "移動登録"}
+                : modalType === "transfer"
+                  ? "移動登録"
+                  : "引落取引"}
         </h2>
 
         <div className="space-y-4">
@@ -217,18 +209,18 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
           {modalType !== "income" && isCard && (
             <div>
               <label className="block text-sm font-medium text-gray-700">
-                支払日（引き落とし日）
+                支払月
               </label>
               <input
-                type="date"
-                value={creditPaymentDate}
-                onChange={(e) => setCreditPaymentDate(e.target.value)}
+                type="month"
+                value={paymentMonth}
+                onChange={(e) => setPaymentMonth(e.target.value)}
                 className="w-full mt-1 border-2 border-gray-300 rounded px-3 py-2 focus:border-blue-500 outline-none"
               />
             </div>
           )}
 
-          {modalType !== "expense" && (
+          {modalType !== "expense" && modalType !== "withdrawal" && (
             <div>
               <label className="block text-sm font-medium text-gray-700">
                 {modalType === "transfer" ? "財布(To)" : "入金先財布"}
@@ -248,7 +240,7 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
             </div>
           )}
 
-          {modalType !== "transfer" && (
+          {modalType !== "transfer" && modalType !== "withdrawal" && (
             <div>
               <label className="block text-sm font-medium text-gray-700">
                 カテゴリー
