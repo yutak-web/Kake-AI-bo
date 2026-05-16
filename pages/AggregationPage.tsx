@@ -17,15 +17,12 @@ import {
   Tooltip,
 } from "recharts";
 import TransactionModal from "../components/TransactionModal";
+import {
+  formatDateLocal,
+  getUpcomingCardPayments,
+} from "../utils/cardPayments";
 
 type AggView = "balance" | "wallet" | "expense" | "income";
-
-const formatDateLocal = (date: Date) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-};
 
 const getTransactionCreatedAtTime = (tx: Transaction) =>
   tx.createdAt ? new Date(tx.createdAt).getTime() : 0;
@@ -188,51 +185,8 @@ const AggregationPage: React.FC = () => {
   );
 
   const getCardPayments = () => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
     return cardWallets.map((card) => {
-      const closingDay = card.closingDay || 31;
       const paymentDay = card.paymentDay || 26;
-
-      const getPaymentDateForTransaction = (dateStr: string) => {
-        const d = new Date(dateStr);
-        let closingYear = d.getFullYear();
-        let closingMonth = d.getMonth();
-        if (d.getDate() > closingDay) closingMonth += 1;
-        return new Date(closingYear, closingMonth + 1, paymentDay);
-      };
-
-      let p1 = new Date(today.getFullYear(), today.getMonth(), paymentDay);
-      if (p1 < today)
-        p1 = new Date(today.getFullYear(), today.getMonth() + 1, paymentDay);
-      let p2 = new Date(p1.getFullYear(), p1.getMonth() + 1, paymentDay);
-
-      const p1Key = formatDateLocal(p1);
-      const p2Key = formatDateLocal(p2);
-
-      let p1Amount = 0;
-      let p2Amount = 0;
-
-      transactions
-        .filter((tx) => tx.fromWalletId === card.id)
-        .forEach((tx) => {
-          // creditPaymentDate が設定されている場合はそれを使う
-          const pDate = tx.creditPaymentDate
-            ? new Date(tx.creditPaymentDate)
-            : getPaymentDateForTransaction(tx.date);
-          const pKey = formatDateLocal(pDate);
-          if (pKey === p1Key) p1Amount += tx.amount;
-          if (pKey === p2Key) p2Amount += tx.amount;
-        });
-
-      if (card.initialPaymentAmount) p1Amount += card.initialPaymentAmount;
-      else if (card.initialBalance < 0)
-        p1Amount += Math.abs(card.initialBalance);
-
-      const formatLabel = (d: Date) =>
-        `${d.getMonth() + 1}/${d.getDate()} 支払い`;
-
       // 引き落とし口座名を取得
       const withdrawalAccount = wallets.find(
         (w) => w.id === card.withdrawalWalletId,
@@ -244,10 +198,7 @@ const AggregationPage: React.FC = () => {
         color: card.color,
         paymentDay,
         withdrawalAccountName: withdrawalAccount?.name || "未設定",
-        payments: [
-          { date: p1, amount: p1Amount, label: formatLabel(p1) },
-          { date: p2, amount: p2Amount, label: formatLabel(p2) },
-        ],
+        payments: getUpcomingCardPayments(card, transactions),
       };
     });
   };
@@ -349,14 +300,18 @@ const AggregationPage: React.FC = () => {
                             ? "bg-green-100 text-green-800"
                             : tx.type === "expense"
                               ? "bg-red-100 text-red-800"
-                              : "bg-yellow-100 text-yellow-800"
+                              : tx.type === "transfer"
+                                ? "bg-yellow-100 text-yellow-800"
+                                : "bg-blue-100 text-blue-800"
                         }`}
                       >
                         {tx.type === "income"
                           ? "収入"
                           : tx.type === "expense"
                             ? "支出"
-                            : "移動"}
+                            : tx.type === "transfer"
+                              ? "移動"
+                              : "引落"}
                       </span>
                     </td>
                     <td className="px-2 py-4">
@@ -370,6 +325,8 @@ const AggregationPage: React.FC = () => {
                         <div className="text-[10px] text-gray-400 font-bold uppercase truncate max-w-[120px]">
                           {tx.type === "transfer"
                             ? "資金移動"
+                            : tx.type === "withdrawal"
+                              ? "口座引落"
                             : cat?.name || "未設定"}
                         </div>
                       </div>
@@ -378,6 +335,11 @@ const AggregationPage: React.FC = () => {
                       </div>
                       <div className="text-[9px] text-gray-500 bg-gray-100 inline-block px-1 rounded">
                         {tx.type === "transfer" ? (
+                          <span className="flex items-center">
+                            {fromW?.name || "?"} <span className="mx-1">→</span>{" "}
+                            {toW?.name || "?"}
+                          </span>
+                        ) : tx.type === "withdrawal" ? (
                           <span className="flex items-center">
                             {fromW?.name || "?"} <span className="mx-1">→</span>{" "}
                             {toW?.name || "?"}
@@ -395,25 +357,31 @@ const AggregationPage: React.FC = () => {
                           ? "text-red-600"
                           : tx.type === "income"
                             ? "text-green-600"
-                            : "text-gray-600"
+                            : tx.type === "withdrawal"
+                              ? "text-red-600"
+                              : "text-gray-600"
                       }`}
                     >
                       {tx.type === "expense"
                         ? "-"
                         : tx.type === "income"
                           ? "+"
+                          : tx.type === "withdrawal"
+                            ? "-"
                           : ""}
                       ¥{tx.amount.toLocaleString()}
                     </td>
                     <td className="px-2 py-4 text-center">
                       <div className="flex justify-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button
-                          onClick={() => setEditingTx(tx)}
-                          className="p-1 hover:bg-blue-100 rounded text-blue-600"
-                          title="編集"
-                        >
-                          <EditIcon />
-                        </button>
+                        {tx.type !== "withdrawal" && (
+                          <button
+                            onClick={() => setEditingTx(tx)}
+                            className="p-1 hover:bg-blue-100 rounded text-blue-600"
+                            title="編集"
+                          >
+                            <EditIcon />
+                          </button>
+                        )}
                         <button
                           onClick={() => handleDeleteTx(tx.id)}
                           className="p-1 hover:bg-red-100 rounded text-red-600"
@@ -853,25 +821,46 @@ const AggregationPage: React.FC = () => {
           </div>
           <div>
             <h3 className="text-sm font-bold text-gray-400 mb-4 uppercase tracking-widest">
-              負債 (クレジットカード)
+              クレジットカード
             </h3>
             <div className="grid grid-cols-2 gap-4">
-              {cardWallets.map((w) => (
-                <div
-                  key={w.id}
-                  onClick={() => navigate(`/wallet/${w.id}`)}
-                  className="sketch-border p-4 bg-white cursor-pointer hover:shadow-md transition-all active:scale-95 border-red-200"
-                  style={{ borderLeft: `6px solid ${w.color || "#ef4444"}` }}
-                >
-                  <h4 className="font-bold text-gray-700 truncate">{w.name}</h4>
-                  <p className="text-xl mt-2 font-mono text-red-600">
-                    ¥{w.currentBalance.toLocaleString()}
-                  </p>
-                </div>
-              ))}
+              {cardWallets.map((w) => {
+                const paymentInfo = cardPayments.find((card) => card.id === w.id);
+                const currentPayment = paymentInfo?.payments[0];
+                const nextPayment = paymentInfo?.payments[1];
+
+                return (
+                  <div
+                    key={w.id}
+                    onClick={() => navigate(`/wallet/${w.id}`)}
+                    className="sketch-border p-4 bg-white cursor-pointer hover:shadow-md transition-all active:scale-95 border-red-200"
+                    style={{ borderLeft: `6px solid ${w.color || "#ef4444"}` }}
+                  >
+                    <h4 className="font-bold text-gray-700 truncate">{w.name}</h4>
+                    <div className="mt-3 space-y-3">
+                      <div>
+                        <p className="text-[10px] text-gray-400 font-bold uppercase">
+                          今月支払い
+                        </p>
+                        <p className="text-lg mt-1 font-mono text-red-600">
+                          ¥{(currentPayment?.amount || 0).toLocaleString()}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-gray-400 font-bold uppercase">
+                          来月支払い
+                        </p>
+                        <p className="text-base mt-1 font-mono text-gray-600">
+                          ¥{(nextPayment?.amount || 0).toLocaleString()}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
               {cardWallets.length === 0 && (
                 <p className="col-span-2 text-gray-400 text-sm text-center py-4">
-                  負債口座がありません
+                  クレジットカードがありません
                 </p>
               )}
             </div>
@@ -884,7 +873,7 @@ const AggregationPage: React.FC = () => {
         </div>
       )}
 
-      {editingTx && (
+      {editingTx && editingTx.type !== "withdrawal" && (
         <TransactionModal
           type={editingTx.type}
           transaction={editingTx}
