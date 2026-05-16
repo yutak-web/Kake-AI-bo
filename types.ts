@@ -30,6 +30,7 @@ export interface Transaction {
   id: string;
   userId: string;
   date: string; // ISO format
+  createdAt?: string; // 登録日時 (ISO format)
   amount: number;
   type: TransactionType;
   fromWalletId?: string; // used for expense and transfer

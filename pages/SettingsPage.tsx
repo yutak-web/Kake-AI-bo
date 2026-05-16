@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import {
-  getWallets,
-  getCategories,
+  subscribeWallets,
+  subscribeCategories,
   addWallet,
   updateWallet,
   deleteWallet,
@@ -102,14 +102,14 @@ const SettingsPage: React.FC = () => {
   const [cType, setCType] = useState<"income" | "expense">("expense");
   const [cColor, setCColor] = useState("#ef4444");
 
-  const fetchData = async () => {
-    const [w, c] = await Promise.all([getWallets(), getCategories()]);
-    setWallets(w);
-    setCategories(c);
-  };
-
   useEffect(() => {
-    fetchData();
+    const unsubscribeWallets = subscribeWallets(setWallets);
+    const unsubscribeCategories = subscribeCategories(setCategories);
+
+    return () => {
+      unsubscribeWallets();
+      unsubscribeCategories();
+    };
   }, []);
 
   const assetWallets = wallets.filter((w) => w.type !== "card");
@@ -145,7 +145,6 @@ const SettingsPage: React.FC = () => {
       }
 
       resetWalletForm();
-      fetchData();
     } catch (e) {
       console.error(e);
       alert("保存に失敗しました。");
@@ -171,7 +170,6 @@ const SettingsPage: React.FC = () => {
       )
     ) {
       await deleteWallet(id);
-      fetchData();
     }
   };
 
@@ -225,7 +223,6 @@ const SettingsPage: React.FC = () => {
       }
 
       resetCategoryForm();
-      fetchData();
     } catch (e) {
       console.error(e);
       alert("保存に失敗しました。");
@@ -242,7 +239,6 @@ const SettingsPage: React.FC = () => {
   const handleDeleteCategory = async (id: string) => {
     if (window.confirm("このカテゴリーを削除しますか？")) {
       await deleteCategory(id);
-      fetchData();
     }
   };
 

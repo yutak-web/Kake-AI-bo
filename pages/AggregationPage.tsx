@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  getWallets,
-  getTransactions,
-  getCategories,
+  subscribeWallets,
+  subscribeTransactions,
+  subscribeCategories,
   deleteTransaction,
   updateTransaction,
 } from "../services/db";
@@ -26,6 +26,9 @@ const formatDateLocal = (date: Date) => {
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 };
+
+const getTransactionCreatedAtTime = (tx: Transaction) =>
+  tx.createdAt ? new Date(tx.createdAt).getTime() : 0;
 
 const EditIcon = () => (
   <svg
@@ -87,19 +90,16 @@ const AggregationPage: React.FC = () => {
   const [selectedWalletId, setSelectedWalletId] = useState<string>("");
   const [reimbursementFilter, setReimbursementFilter] = useState<string>(""); // "": all, "pending": 立替申請(未立替済み), "done": 立替済み, "no": 立替以外
 
-  const fetchData = async () => {
-    const [w, t, c] = await Promise.all([
-      getWallets(),
-      getTransactions(),
-      getCategories(),
-    ]);
-    setWallets(w);
-    setTransactions(t);
-    setCategories(c);
-  };
-
   useEffect(() => {
-    fetchData();
+    const unsubscribeWallets = subscribeWallets(setWallets);
+    const unsubscribeTransactions = subscribeTransactions(setTransactions);
+    const unsubscribeCategories = subscribeCategories(setCategories);
+
+    return () => {
+      unsubscribeWallets();
+      unsubscribeTransactions();
+      unsubscribeCategories();
+    };
   }, []);
 
   useEffect(() => {
@@ -117,7 +117,6 @@ const AggregationPage: React.FC = () => {
     try {
       await updateTransaction(editingTx.id, payload);
       setEditingTx(null);
-      fetchData();
       alert("更新しました");
     } catch (e) {
       console.error(e);
@@ -129,7 +128,6 @@ const AggregationPage: React.FC = () => {
     if (window.confirm("この履歴を削除しますか？")) {
       try {
         await deleteTransaction(id);
-        fetchData();
       } catch (e) {
         console.error(e);
         alert("削除に失敗しました");
@@ -295,9 +293,11 @@ const AggregationPage: React.FC = () => {
           })
         : filteredTransactions;
 
-    const sortedTxs = [...txList].sort(
-      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
-    );
+    const sortedTxs = [...txList].sort((a, b) => {
+      const dateDiff = new Date(b.date).getTime() - new Date(a.date).getTime();
+      if (dateDiff !== 0) return dateDiff;
+      return getTransactionCreatedAtTime(b) - getTransactionCreatedAtTime(a);
+    });
 
     const getTitle = () => {
       if (type === "expense") return "支出履歴";
