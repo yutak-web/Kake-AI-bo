@@ -108,6 +108,7 @@ const WalletDetailsPage: React.FC = () => {
   const [selectedPaymentMonth, setSelectedPaymentMonth] =
     useState(currentMonth);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>("");
+  const [searchText, setSearchText] = useState("");
   const [actualPaymentDateInput, setActualPaymentDateInput] = useState("");
 
   useEffect(() => {
@@ -200,7 +201,13 @@ const WalletDetailsPage: React.FC = () => {
     return transactions.filter((tx) => {
       const categoryMatches =
         !selectedCategoryId || tx.categoryId === selectedCategoryId;
+      const normalizedSearchText = searchText.trim().toLowerCase();
+      const searchMatches =
+        !normalizedSearchText ||
+        tx.description.toLowerCase().includes(normalizedSearchText) ||
+        tx.note.toLowerCase().includes(normalizedSearchText);
       if (!categoryMatches) return false;
+      if (!searchMatches) return false;
 
       if (wallet?.type === "card") {
         if (tx.fromWalletId !== wallet.id) return false;
@@ -218,6 +225,7 @@ const WalletDetailsPage: React.FC = () => {
     startDate,
     endDate,
     selectedCategoryId,
+    searchText,
     wallet,
     selectedPaymentMonth,
   ]);
@@ -591,6 +599,19 @@ const WalletDetailsPage: React.FC = () => {
                   </option>
                 ))}
               </select>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <label className="text-[10px] font-bold text-gray-400 min-w-[40px]">
+                検索
+              </label>
+              <input
+                type="text"
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+                placeholder="内容・備考を含む"
+                className="flex-1 text-xs border border-gray-300 rounded px-2 py-1 outline-none focus:border-blue-500"
+              />
             </div>
 
             {isCardWallet && (
