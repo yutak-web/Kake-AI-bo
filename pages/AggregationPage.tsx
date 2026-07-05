@@ -92,6 +92,7 @@ const AggregationPage: React.FC = () => {
   const [selectedBalanceDate, setSelectedBalanceDate] = useState(todayStr);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>("");
   const [selectedWalletId, setSelectedWalletId] = useState<string>("");
+  const [searchText, setSearchText] = useState("");
   const [reimbursementFilter, setReimbursementFilter] = useState<string>(""); // "": all, "pending": 立替申請(未立替済み), "done": 立替済み, "no": 立替以外
 
   useEffect(() => {
@@ -146,6 +147,11 @@ const AggregationPage: React.FC = () => {
         (!endDate || tx.date <= endDate);
       const categoryMatches =
         !selectedCategoryId || tx.categoryId === selectedCategoryId;
+      const normalizedSearchText = searchText.trim().toLowerCase();
+      const searchMatches =
+        !normalizedSearchText ||
+        tx.description.toLowerCase().includes(normalizedSearchText) ||
+        tx.note.toLowerCase().includes(normalizedSearchText);
       const walletMatches =
         !selectedWalletId ||
         (view === "expense" && tx.fromWalletId === selectedWalletId) ||
@@ -158,10 +164,15 @@ const AggregationPage: React.FC = () => {
           (reimbursementFilter === "done" && tx.isReimbursement && tx.isReimbursed) ||
           (reimbursementFilter === "no" && !tx.isReimbursement);
         return (
-          tx.type === view && dateInRange && categoryMatches && walletMatches && reimbursementMatches
+          tx.type === view &&
+          dateInRange &&
+          categoryMatches &&
+          searchMatches &&
+          walletMatches &&
+          reimbursementMatches
         );
       }
-      return dateInRange && categoryMatches;
+      return dateInRange && categoryMatches && searchMatches;
     });
   }, [
     transactions,
@@ -169,6 +180,7 @@ const AggregationPage: React.FC = () => {
     startDate,
     endDate,
     selectedCategoryId,
+    searchText,
     selectedWalletId,
     reimbursementFilter,
   ]);
@@ -276,7 +288,12 @@ const AggregationPage: React.FC = () => {
               (!endDate || tx.date <= endDate);
             const categoryMatches =
               !selectedCategoryId || tx.categoryId === selectedCategoryId;
-            return dateInRange && categoryMatches;
+            const normalizedSearchText = searchText.trim().toLowerCase();
+            const searchMatches =
+              !normalizedSearchText ||
+              tx.description.toLowerCase().includes(normalizedSearchText) ||
+              tx.note.toLowerCase().includes(normalizedSearchText);
+            return dateInRange && categoryMatches && searchMatches;
           })
         : filteredTransactions;
 
@@ -543,6 +560,19 @@ const AggregationPage: React.FC = () => {
               </select>
             </div>
           )}
+
+          <div className="flex items-center space-x-2">
+            <label className="text-[10px] font-bold text-gray-400 min-w-[40px]">
+              検索
+            </label>
+            <input
+              type="text"
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              placeholder="内容・備考を含む"
+              className="flex-1 text-xs border border-gray-300 rounded px-2 py-1 outline-none focus:border-blue-500"
+            />
+          </div>
 
           {(view === "expense" || view === "income") && (
             <div className="flex items-center space-x-2">
